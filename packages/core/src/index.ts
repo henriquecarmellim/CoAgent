@@ -5,3 +5,5 @@ export * from './permission-manager.js';
 export * from './session-manager.js';
 export * from './context-manager.js';
 export * from './message-bus.js';
+export * from './project-memory.js';
+export * from './worktree-manager.js';

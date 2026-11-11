@@ -9,15 +9,18 @@ Desenvolvido para ambientes de produção, o sistema suporta **até 4 agentes ex
 ## 🌟 Principais Recursos
 
 - **Orquestração Inteligente (DAG)**: Decomposição automática de objetivos de alto nível em tarefas encadeadas acíclicas.
+- **CoAgent Advisor (Conselheiro / Ultrareview)**: Consultoria estratégica de arquitetura (`coagent advise`) e revisão minuciosa de diffs (`coagent review`).
 - **Delegação Especializada (SmartDelegator)**: Atribuição baseada em afinidade de capacidades, carga atual de concorrência e regra de isolamento para revisões independentes de código.
 - **Execução Paralela Controlada**: Agendador com semáforo configurável para **4 slots simultâneos globais** e limite por provedor.
-- **Isolamento de Processos e Cancelamento**: Controle fino com `AbortController` e finalização segura de processos zumbis.
-- **Comunicação Estruturada**: Barramento pub/sub com envelopes JSON tipados e propagação seletiva de contexto (sem poluição de histórico).
+- **Isolamento via Git Worktrees**: Execução concorrente de tarefas de código em branches e worktrees isoladas (`.coagent/worktrees/`), prevenindo conflitos de escrita.
+- **Self-Healing Loop**: Detecção de falhas de compilação ou sintaxe com despacho automático de tarefas de auto-correção (`debugging`).
+- **Memória de Projeto (`COAGENT.md`)**: Injeção automática das diretrizes do projeto no contexto soberano de todos os agentes.
+- **Opção "Dangerously Skip Permissions"**: Flag `--dangerously-skip-permissions` para automação sem bloqueios de confirmação humana.
+- **Modo Interativo REPL (`coagent chat`)**: Sessão de chat no terminal com menções a agentes (`@claude`, `@codex`, `@agy`, `@opencode`, `@advisor`).
 - **Persistência ACID Local**: SQLite nativo (`node:sqlite`) em modo WAL para tarefas, mensagens, sessões e auditoria.
-- **Segurança Multicamadas**: Políticas de segurança (`read-only`, `workspace-write`, `danger-full-access`) e bloqueio ativo de comandos destrutivos.
-- **CLI Profissional (`coagent`)**: Interface completa para gestão de tarefas, agentes, execução e configuração.
+- **Segurança Multicamadas**: Políticas de segurança (`read-only`, `workspace-write`, `danger-full-access`) e aprovação humana interativa.
 - **Model Context Protocol (MCP)**: Servidor stdio MCP para expor o CoAgent a outros agentes e ferramentas externas.
-- **Dashboard Web em Tempo Real**: Interface visual moderna com Server-Sent Events (SSE) para monitorar os 4 slots e tarefas ao vivo.
+- **Dashboard Web em Tempo Real**: Interface visual moderna com Server-Sent Events (SSE) para monitorar os 4 slots e aprovar tarefas com 1 clique.
 
 ---
 
@@ -67,6 +70,27 @@ npm test
 ---
 
 ## 💻 Uso da Linha de Comando (`coagent`)
+
+### Consultoria com o Advisor & Ultrareview
+```bash
+# Consultar o Advisor para aconselhamento estratégico de arquitetura
+node apps/cli/dist/index.js advise "Qual a melhor estratégia para cache em microsserviços?"
+
+# Revisar o diff de alterações Git atuais antes do commit
+node apps/cli/dist/index.js review
+```
+
+### Modo Interativo (Chat REPL)
+```bash
+# Iniciar terminal interativo para pair-programming com os agentes
+node apps/cli/dist/index.js chat
+```
+
+### Bypass de Permissões (Dangerously Skip Permissions)
+```bash
+# Executa tarefas ou orquestrações sem interrupções de confirmação humana
+node apps/cli/dist/index.js --dangerously-skip-permissions run "Refatorar módulos legados"
+```
 
 ### Visualizar Agentes e Concorrência
 ```bash

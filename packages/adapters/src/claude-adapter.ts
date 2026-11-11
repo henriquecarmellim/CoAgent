@@ -64,7 +64,12 @@ export class ClaudeCodeAdapter extends BaseCliAdapter {
       args.push('--model', task.targetModel);
     }
 
-    if (task.securityPolicy?.level === 'workspace-write' || task.securityPolicy?.level === 'danger-full-access') {
+    if (
+      options.dangerouslySkipPermissions ||
+      task.securityPolicy?.dangerouslySkipPermissions ||
+      task.securityPolicy?.level === 'workspace-write' ||
+      task.securityPolicy?.level === 'danger-full-access'
+    ) {
       args.push('--dangerously-skip-permissions');
     }
 

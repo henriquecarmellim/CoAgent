@@ -3,16 +3,143 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import ora from 'ora';
+import { createInterface } from 'node:readline';
+import { execSync } from 'node:child_process';
 import { bootstrapCoAgent } from '@coagent/orchestrator';
 import { TaskPriority, TaskType } from '@coagent/protocol';
 
 const program = new Command();
-const coagent = bootstrapCoAgent();
+
+// Detecta flag de bypass de permissões antes do bootstrap
+const isDangerBypass = process.argv.includes('--dangerously-skip-permissions');
+const coagent = bootstrapCoAgent({ dangerouslySkipPermissions: isDangerBypass });
 
 program
   .name('coagent')
   .description(chalk.bold.cyan('CoAgent — Framework de Orquestração Multiagente de IA'))
-  .version('1.0.0');
+  .version('1.0.0')
+  .option(
+    '--dangerously-skip-permissions',
+    'Bypass e auto-aprovação de todas as permissões de segurança e execução'
+  );
+
+// ==========================================
+// Subcomando: ADVISE (Conselheiro / Segundo Par de Olhos)
+// ==========================================
+program
+  .command('advise <query>')
+  .description('Consulta o CoAgent Advisor para obter conselho estratégico de arquitetura ou engenharia')
+  .option('-c, --context <context>', 'Contexto técnico adicional')
+  .action(async (query, options) => {
+    console.log(chalk.bold.magenta('\n🧠 CoAgent Advisor — Consultoria Sênior:\n'));
+    const spinner = ora('Analisando questão com o modelo conselheiro...').start();
+    try {
+      const advice = await coagent.orchestrator.advisor.advise(query, options.context);
+      spinner.succeed(chalk.green('Parecer do Advisor gerado:'));
+      console.log('\n' + chalk.cyan(advice) + '\n');
+    } catch (err) {
+      spinner.fail(chalk.red('Falha ao consultar Advisor'));
+      console.error(err);
+    }
+  });
+
+// ==========================================
+// Subcomando: REVIEW (Ultrareview de Diff / Código)
+// ==========================================
+program
+  .command('review')
+  .description('Executa uma revisão crítica (Ultrareview) nas alterações Git atuais do repositório')
+  .option('-d, --diff <diffText>', 'Diff específico para revisão')
+  .action((options) => {
+    console.log(chalk.bold.magenta('\n🧐 CoAgent Advisor — Ultrareview de Código:\n'));
+
+    let diff = options.diff;
+    if (!diff) {
+      try {
+        const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+        diff = execSync('git diff HEAD', { encoding: 'utf-8', shell });
+        if (!diff.trim()) {
+          diff = execSync('git diff --cached', { encoding: 'utf-8', shell });
+        }
+      } catch {
+        diff = '';
+      }
+    }
+
+    if (!diff.trim()) {
+      console.log(chalk.yellow('Nenhuma alteração detectada no Git diff para revisão.\n'));
+      return;
+    }
+
+    const review = coagent.orchestrator.advisor.reviewDiff(diff);
+    if (review.approved) {
+      console.log(chalk.green(`✓ Status da Revisão: Aprovado pelo Advisor!`));
+    } else {
+      console.log(chalk.red(`✖ Status da Revisão: Reprovado pelo Advisor!`));
+    }
+
+    console.log(`• Resumo: ${review.summary}\n`);
+
+    if (review.issuesFound.length > 0) {
+      console.log(chalk.bold('Observações Encontradas:'));
+      for (const issue of review.issuesFound) {
+        const icon = issue.severity === 'critical' ? chalk.red('✖ [Crítico]') : chalk.yellow('⚠️ [Aviso]');
+        console.log(`  ${icon} ${issue.message}`);
+      }
+      console.log('');
+    }
+  });
+
+// ==========================================
+// Subcomando: CHAT (REPL Interativo)
+// ==========================================
+program
+  .command('chat')
+  .description('Inicia uma sessão interativa (REPL) para conversar com os agentes e o orquestrador')
+  .action(async () => {
+    console.log(chalk.bold.cyan('\n💬 Sessão Interativa CoAgent iniciada!'));
+    console.log(chalk.gray('Dica: Use menções como @claude, @codex, @agy, @opencode, @advisor ou digite seu objetivo diretamente.'));
+    console.log(chalk.gray('Digite "exit" ou "sair" para encerrar.\n'));
+
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      prompt: chalk.bold.blue('coagent> '),
+    });
+
+    rl.prompt();
+
+    rl.on('line', async (line) => {
+      const input = line.trim();
+      if (!input) {
+        rl.prompt();
+        return;
+      }
+
+      if (['exit', 'sair', 'quit'].includes(input.toLowerCase())) {
+        console.log(chalk.yellow('Encerrando sessão interativa...'));
+        rl.close();
+        process.exit(0);
+      }
+
+      if (input.startsWith('@advisor')) {
+        const query = input.replace(/^@advisor\s*/, '');
+        console.log(chalk.magenta('\nConsultando CoAgent Advisor...'));
+        const advice = await coagent.orchestrator.advisor.advise(query);
+        console.log(chalk.cyan(advice) + '\n');
+      } else {
+        console.log(chalk.cyan(`\nOrquestrando: "${input}"...`));
+        try {
+          const result = await coagent.orchestrator.executeObjective(input);
+          console.log(chalk.green(`\n✓ Concluído: ${result.summary}\n`));
+        } catch (err) {
+          console.log(chalk.red(`\n✖ Erro: ${err instanceof Error ? err.message : String(err)}\n`));
+        }
+      }
+
+      rl.prompt();
+    });
+  });
 
 // ==========================================
 // Subcomando: AGENTS
@@ -70,7 +197,8 @@ agentsCmd
     console.log(chalk.bold('\n📊 Status de Execução em Tempo Real:\n'));
     console.log(`• Slots Globais de Execução: ${chalk.cyan(status.concurrency.active)} / ${chalk.cyan(status.concurrency.max)}`);
     console.log(`• Tarefas em Execução: ${chalk.yellow(status.activeTasks.length)}`);
-    console.log(`• Tarefas Aguardando na Fila: ${chalk.blue(status.queuedTasks.length)}\n`);
+    console.log(`• Tarefas Aguardando na Fila: ${chalk.blue(status.queuedTasks.length)}`);
+    console.log(`• Memória de Projeto (COAGENT.md): ${status.projectMemory.loaded ? chalk.green('Ativa') : chalk.gray('Não detectada')}\n`);
 
     const table = new Table({
       head: [
@@ -99,7 +227,7 @@ agentsCmd
 // ==========================================
 // Subcomando: TASK
 // ==========================================
-const taskCmd = program.command('task').description('Criação, inspeção e controle de tarefas');
+const taskCmd = program.command('task').description('Criação, inspeção, controle e aprovação de tarefas');
 
 taskCmd
   .command('create <title>')
@@ -115,6 +243,9 @@ taskCmd
       type: options.type as TaskType,
       priority: options.priority as TaskPriority,
       assignedAgent: options.agent,
+      securityPolicy: {
+        dangerouslySkipPermissions: isDangerBypass,
+      },
     });
 
     coagent.scheduler.submitTask(task);
@@ -129,7 +260,7 @@ taskCmd
 taskCmd
   .command('list')
   .description('Lista as tarefas cadastradas no sistema')
-  .option('-s, --status <status>', 'Filtrar por status (pending, queued, running, completed, failed, cancelled)')
+  .option('-s, --status <status>', 'Filtrar por status')
   .option('-l, --limit <limit>', 'Limite de tarefas exibidas', '25')
   .action((options) => {
     let tasks = coagent.taskManager.listTasks(parseInt(options.limit, 10));
@@ -159,6 +290,8 @@ taskCmd
           ? chalk.green(t.status)
           : t.status === 'running'
           ? chalk.yellow(t.status)
+          : t.status === 'waiting_approval'
+          ? chalk.magenta(t.status)
           : t.status === 'failed'
           ? chalk.red(t.status)
           : t.status === 'cancelled'
@@ -215,6 +348,26 @@ taskCmd
   });
 
 taskCmd
+  .command('approve <id>')
+  .description('Aprova a execução de uma tarefa pausada para autorização humana')
+  .action((id) => {
+    try {
+      coagent.taskManager.transitionStatus(id, 'running');
+      console.log(chalk.green(`\n✓ Tarefa ${id} APROVADA com sucesso. Execução retomada.\n`));
+    } catch (err) {
+      console.log(chalk.red(`\n✖ Erro ao aprovar tarefa: ${err instanceof Error ? err.message : String(err)}\n`));
+    }
+  });
+
+taskCmd
+  .command('reject <id>')
+  .description('Rejeita e cancela uma tarefa pausada para autorização humana')
+  .action((id) => {
+    coagent.scheduler.cancelRunningTask(id, 'Operação rejeitada pelo usuário');
+    console.log(chalk.yellow(`\n✓ Tarefa ${id} REJEITADA e cancelada pelo usuário.\n`));
+  });
+
+taskCmd
   .command('cancel <id>')
   .description('Cancela uma tarefa em execução ou na fila')
   .action((id) => {
@@ -232,10 +385,18 @@ program
     console.log(chalk.bold.cyan(`\n🚀 Iniciando Orquestração CoAgent:`));
     console.log(`Objetivo: "${chalk.bold(objective)}"\n`);
 
-    const spinner = ora('Decompondo objetivo e atribuindo agentes aos slots paralelos...').start();
+    if (isDangerBypass) {
+      console.log(chalk.bold.yellow('⚠️  MODO DANGEROUSLY SKIP PERMISSIONS ATIVADO: Confirmações desativadas.\n'));
+    }
+
+    const spinner = ora('Consultando Advisor e gerando plano de tarefas...').start();
 
     try {
       const result = await coagent.orchestrator.executeObjective(objective, {
+        onAdvisorCritique: (critique) => {
+          spinner.info(chalk.magenta(`Advisor: ${critique.summary} (Score: ${critique.score}/100)`));
+          spinner.start('Executando tarefas com semáforo de concorrência...');
+        },
         onProgress: (completed, total) => {
           spinner.text = `Progresso do plano: ${completed}/${total} subtarefas concluídas...`;
         },
@@ -283,9 +444,11 @@ program
     console.log(chalk.bold('\n⚙️  Configurações Ativas do CoAgent:\n'));
     console.log(`• Limite Global de Concorrência: ${chalk.cyan('4 agentes simultâneos')}`);
     console.log(`• Limite por Provedor: ${chalk.cyan('2 por provedor (agy, claude-code, codex, opencode)')}`);
-    console.log(`• Modo de Segurança Padrão: ${chalk.cyan('workspace-write')}`);
-    console.log(`• Banco de Dados: SQLite WAL`);
-    console.log(`• Provedores Registrados: Google AGY, Claude Code, OpenAI Codex, OpenCode\n`);
+    console.log(`• Dangerously Skip Permissions: ${isDangerBypass ? chalk.red('ATIVADO') : chalk.green('DESATIVADO')}`);
+    console.log(`• Isolamento Git Worktrees: ${chalk.green('Habilitado')}`);
+    console.log(`• Auto-Cura (Self-Healing Loop): ${chalk.green('Habilitado')}`);
+    console.log(`• CoAgent Advisor: ${chalk.magenta('Ativo')}`);
+    console.log(`• Banco de Dados: SQLite WAL\n`);
   });
 
 // ==========================================
@@ -300,7 +463,7 @@ program
     console.log(chalk.bold.cyan(`\n🌐 Iniciando CoAgent Web Dashboard na porta ${port}...`));
     console.log(`Acesse: ${chalk.underline.bold(`http://localhost:${port}`)}\n`);
     console.log(`Para iniciar o serviço autônomo do dashboard em segundo plano, execute:`);
-    console.log(chalk.green(`  npm --workspace=@coagent/dashboard run start -- --port ${port}\n`));
+    console.log(chalk.green(`  node apps/dashboard/dist/server.js\n`));
   });
 
 program.parse(process.argv);

@@ -37,12 +37,16 @@ export class PermissionManager {
       ],
       allowTerminalExecution: defaultPolicy?.allowTerminalExecution ?? true,
       requireApprovalForDestructive: defaultPolicy?.requireApprovalForDestructive ?? true,
+      dangerouslySkipPermissions: defaultPolicy?.dangerouslySkipPermissions ?? false,
     };
     this.logger = createLogger('core:permission-manager');
   }
 
   public checkPathAccess(targetPath: string, policy?: SecurityPolicy): boolean {
     const activePolicy = policy ?? this.defaultPolicy;
+    if (activePolicy.dangerouslySkipPermissions) {
+      return true;
+    }
     const normalizedTarget = normalize(resolve(targetPath));
 
     if (activePolicy.allowedDirectories.length === 0) {
@@ -63,6 +67,14 @@ export class PermissionManager {
     policy?: SecurityPolicy
   ): PermissionCheckResult {
     const activePolicy = policy ?? this.defaultPolicy;
+
+    // Se "dangerouslySkipPermissions" estiver ativado, bypass de todas as restrições
+    if (activePolicy.dangerouslySkipPermissions) {
+      return {
+        allowed: true,
+        requiresApproval: false,
+      };
+    }
 
     // Se estiver em modo read-only e tentar executar comandos destrutivos ou terminal
     if (activePolicy.level === 'read-only' && request.command) {
@@ -143,6 +155,13 @@ export class PermissionManager {
     }
   }
 
+  public setDangerouslySkipPermissions(enabled: boolean): void {
+    this.defaultPolicy.dangerouslySkipPermissions = enabled;
+    if (enabled) {
+      this.logger.warn('⚠️  DANGEROUSLY_SKIP_PERMISSIONS ATIVADO: Todos os controles e travas de segurança foram desativados.');
+    }
+  }
+
   public getPolicyForLevel(level: PermissionLevel): SecurityPolicy {
     switch (level) {
       case 'read-only':
@@ -151,6 +170,7 @@ export class PermissionManager {
           level: 'read-only',
           allowTerminalExecution: false,
           requireApprovalForDestructive: true,
+          dangerouslySkipPermissions: this.defaultPolicy.dangerouslySkipPermissions,
         };
       case 'workspace-write':
         return {
@@ -158,6 +178,7 @@ export class PermissionManager {
           level: 'workspace-write',
           allowTerminalExecution: true,
           requireApprovalForDestructive: true,
+          dangerouslySkipPermissions: this.defaultPolicy.dangerouslySkipPermissions,
         };
       case 'danger-full-access':
         return {
@@ -165,6 +186,7 @@ export class PermissionManager {
           level: 'danger-full-access',
           allowTerminalExecution: true,
           requireApprovalForDestructive: false,
+          dangerouslySkipPermissions: this.defaultPolicy.dangerouslySkipPermissions,
         };
     }
   }

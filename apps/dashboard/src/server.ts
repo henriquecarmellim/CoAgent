@@ -60,6 +60,20 @@ export async function startDashboardServer(
     return task;
   });
 
+  // REST: Aprovar Tarefa
+  fastify.post('/api/tasks/:id/approve', async (req) => {
+    const params = req.params as { id: string };
+    coagent.taskManager.transitionStatus(params.id, 'running');
+    return { success: true, taskId: params.id, status: 'running' };
+  });
+
+  // REST: Rejeitar Tarefa
+  fastify.post('/api/tasks/:id/reject', async (req) => {
+    const params = req.params as { id: string };
+    coagent.scheduler.cancelRunningTask(params.id, 'Rejeitado pelo usuário via Dashboard');
+    return { success: true, taskId: params.id, status: 'cancelled' };
+  });
+
   // SSE: Server-Sent Events para atualização em tempo real
   fastify.get('/api/events', async (req, reply) => {
     reply.raw.setHeader('Content-Type', 'text/event-stream');

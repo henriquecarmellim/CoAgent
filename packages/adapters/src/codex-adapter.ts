@@ -63,7 +63,9 @@ export class CodexAdapter extends BaseCliAdapter {
       args.push('-m', task.targetModel);
     }
 
-    if (task.securityPolicy?.level === 'read-only') {
+    if (options.dangerouslySkipPermissions || task.securityPolicy?.dangerouslySkipPermissions) {
+      args.push('--dangerously-bypass-approvals-and-sandbox');
+    } else if (task.securityPolicy?.level === 'read-only') {
       args.push('-s', 'read-only');
     } else if (task.securityPolicy?.level === 'workspace-write') {
       args.push('-s', 'workspace-write');

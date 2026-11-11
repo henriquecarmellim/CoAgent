@@ -27,6 +27,7 @@ export const SecurityPolicySchema = z.object({
   ]),
   allowTerminalExecution: z.boolean().default(true),
   requireApprovalForDestructive: z.boolean().default(true),
+  dangerouslySkipPermissions: z.boolean().default(false),
 });
 
 export type SecurityPolicy = z.infer<typeof SecurityPolicySchema>;

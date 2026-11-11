@@ -65,8 +65,13 @@ export class AgyAdapter extends BaseCliAdapter {
       args.push('--model', task.targetModel);
     }
 
-    // Se a política de segurança permitir escrita de workspace, bypass de confirmações para automação
-    if (task.securityPolicy?.level === 'workspace-write' || task.securityPolicy?.level === 'danger-full-access') {
+    // Se a política de segurança permitir escrita ou se o modo perigoso estiver habilitado
+    if (
+      options.dangerouslySkipPermissions ||
+      task.securityPolicy?.dangerouslySkipPermissions ||
+      task.securityPolicy?.level === 'workspace-write' ||
+      task.securityPolicy?.level === 'danger-full-access'
+    ) {
       args.push('--dangerously-skip-permissions');
     }
 

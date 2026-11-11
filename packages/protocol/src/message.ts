@@ -10,6 +10,8 @@ export const MessageTypeSchema = z.enum([
   'REVIEW_RESULT',      // Agente revisor devolve parecer de revisão
   'REQUEST_APPROVAL',   // Agente solicita autorização para ação destrutiva
   'APPROVAL_DECISION',  // Decisão humana/orquestrador (aprovado/rejeitado)
+  'ADVISOR_CRITIQUE',   // Análise crítica preventiva do Advisor sobre um plano
+  'ADVISOR_REVIEW',     // Revisão sênior pós-execução do Advisor
   'TASK_COMPLETE',      // Agente entrega o resultado final da tarefa
   'TASK_ERROR',         // Agente reporta falha de execução
   'BROADCAST_NOTICE',   // Mensagem global para todos os agentes

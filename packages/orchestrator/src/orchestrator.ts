@@ -6,6 +6,8 @@ import {
   MessageBus,
   PermissionManager,
   EventBus,
+  ProjectMemoryManager,
+  WorktreeManager,
 } from '@coagent/core';
 import { TaskScheduler } from '@coagent/scheduler';
 import { AgentAdapter } from '@coagent/adapters';
@@ -13,17 +15,26 @@ import { CoAgentError, createLogger, Logger, sleep } from '@coagent/shared';
 import { SmartDelegator } from './smart-delegator.js';
 import { PlanDecomposer, ExecutionPlan } from './plan-decomposer.js';
 import { ResultAggregator, ConsolidatedResult } from './result-aggregator.js';
+import { AdvisorEngine, AdvisorCritique } from './advisor-engine.js';
+import { SelfHealingController } from './self-healing.js';
 
 export interface CoAgentOrchestratorConfig {
   maxGlobalParallelism?: number;
   workingDirectory?: string;
+  enableWorktrees?: boolean;
+  enableSelfHealing?: boolean;
+  dangerouslySkipPermissions?: boolean;
 }
 
 export class CoAgentOrchestrator {
   private readonly adapters = new Map<string, AgentAdapter>();
-  private readonly smartDelegator: SmartDelegator;
-  private readonly planDecomposer: PlanDecomposer;
-  private readonly resultAggregator: ResultAggregator;
+  public readonly smartDelegator: SmartDelegator;
+  public readonly planDecomposer: PlanDecomposer;
+  public readonly resultAggregator: ResultAggregator;
+  public readonly advisor: AdvisorEngine;
+  public readonly projectMemory: ProjectMemoryManager;
+  public readonly worktreeManager: WorktreeManager;
+  public readonly selfHealing: SelfHealingController;
   private readonly logger: Logger;
 
   constructor(
@@ -39,7 +50,15 @@ export class CoAgentOrchestrator {
     this.smartDelegator = new SmartDelegator(agentRegistry);
     this.planDecomposer = new PlanDecomposer();
     this.resultAggregator = new ResultAggregator();
+    this.advisor = new AdvisorEngine(agentRegistry, messageBus);
+    this.projectMemory = new ProjectMemoryManager(config.workingDirectory);
+    this.worktreeManager = new WorktreeManager(config.workingDirectory);
+    this.selfHealing = new SelfHealingController();
     this.logger = createLogger('orchestrator:engine');
+
+    if (config.dangerouslySkipPermissions) {
+      this.permissionManager.setDangerouslySkipPermissions(true);
+    }
 
     // Conecta o handler de execução do scheduler aos adaptadores de agentes
     this.scheduler.setExecutionHandler(async (task, signal) => {
@@ -58,40 +77,43 @@ export class CoAgentOrchestrator {
   }
 
   /**
-   * Executa um objetivo completo de alto nível:
-   * 1. Decompõe o objetivo em um plano de subtarefas DAG.
-   * 2. Atribui cada subtarefa ao melhor agente (com regra de isolamento para revisão).
-   * 3. Submete as tarefas ao scheduler de concorrência.
-   * 4. Acompanha até conclusão e consolida o resultado final.
+   * Executa um objetivo completo de alto nível com consultoria do Advisor e auto-cura.
    */
   public async executeObjective(
     goal: string,
-    options?: { onProgress?: (completed: number, total: number) => void }
+    options?: {
+      onProgress?: (completed: number, total: number) => void;
+      onAdvisorCritique?: (critique: AdvisorCritique) => void;
+    }
   ): Promise<ConsolidatedResult> {
     this.logger.info(`Recebido objetivo para orquestração: "${goal}"`);
 
-    // 1. Decomposição
+    // 1. Decomposição do Objetivo
     const plan: ExecutionPlan = this.planDecomposer.decomposeObjective(goal);
+
+    // 2. Advisor Critique (Segundo par de olhos antes de iniciar)
+    const critique = this.advisor.critiquePlan(plan);
+    this.logger.info(`Parecer do Advisor sobre o plano: ${critique.summary}`);
+    if (options?.onAdvisorCritique) {
+      options.onAdvisorCritique(critique);
+    }
+
+    // 3. Criação da Tarefa Macro
     const mainTaskId = this.taskManager.createTask({
       title: `[Orquestração] ${goal}`,
       type: 'general',
       priority: 'high',
-      metadata: { isMainObjective: true, planId: plan.id },
+      metadata: { isMainObjective: true, planId: plan.id, advisorScore: critique.score },
     }).id;
     this.taskManager.transitionStatus(mainTaskId, 'running');
 
-    // 2. Criação das subtarefas
+    // 4. Criação e atribuição das subtarefas com SmartDelegator
     const subtaskDefs = this.planDecomposer.toTaskDefinitions(plan, mainTaskId);
     const createdTasks: Task[] = [];
-
-    // Mapeamento de agente autor para garantir revisor independente
     let implementationAgentId: string | undefined;
 
     for (const def of subtaskDefs) {
-      // Cria a tarefa no TaskManager
       const task = this.taskManager.createTask(def);
-
-      // Delegação Inteligente
       const excludeAgentId = def.type === 'code_review' ? implementationAgentId : undefined;
       const assigned = this.smartDelegator.selectBestAgent(task, { excludeAgentId });
 
@@ -105,12 +127,12 @@ export class CoAgentOrchestrator {
       createdTasks.push(task);
     }
 
-    // 3. Submissão das tarefas ao scheduler
+    // 5. Submissão das tarefas ao scheduler paralelo
     for (const task of createdTasks) {
       this.scheduler.submitTask(task);
     }
 
-    // 4. Aguarda conclusão de todas as subtarefas
+    // 6. Monitoramento de execução e suporte a Self-Healing Loop
     const pendingIds = new Set(createdTasks.map((t) => t.id));
     while (pendingIds.size > 0) {
       await sleep(100);
@@ -119,6 +141,19 @@ export class CoAgentOrchestrator {
         const current = this.taskManager.getTask(id);
         if (current && ['completed', 'failed', 'cancelled'].includes(current.status)) {
           pendingIds.delete(id);
+
+          // Self-Healing Loop automático em caso de falha
+          if (current.status === 'failed' && this.config.enableSelfHealing !== false) {
+            const diagnosis = this.selfHealing.diagnoseAndHeal(current);
+            if (diagnosis) {
+              this.logger.warn(`Acionando auto-cura para subtarefa [${current.id}]...`);
+              const healingTask = this.taskManager.createTask(diagnosis.healingTaskDefinition);
+              createdTasks.push(healingTask);
+              pendingIds.add(healingTask.id);
+              this.scheduler.submitTask(healingTask);
+            }
+          }
+
           if (options?.onProgress) {
             options.onProgress(createdTasks.length - pendingIds.size, createdTasks.length);
           }
@@ -126,11 +161,10 @@ export class CoAgentOrchestrator {
       }
     }
 
-    // 5. Agregação dos resultados
+    // 7. Consolidação Final
     const finalTasks = createdTasks.map((t) => this.taskManager.getTaskOrThrow(t.id));
     const consolidated = this.resultAggregator.aggregate(goal, finalTasks);
 
-    // Atualiza status da tarefa principal
     this.taskManager.transitionStatus(
       mainTaskId,
       consolidated.success ? 'completed' : 'failed',
@@ -141,7 +175,7 @@ export class CoAgentOrchestrator {
   }
 
   /**
-   * Despacha uma tarefa individual para o adaptador do agente correspondente.
+   * Despacha uma tarefa individual com isolamento de worktree e contexto do COAGENT.md.
    */
   private async dispatchTaskToAdapter(task: Task, signal: AbortSignal): Promise<unknown> {
     if (!task.assignedAgent) {
@@ -158,54 +192,80 @@ export class CoAgentOrchestrator {
       );
     }
 
-    // Verificação de permissões de segurança antes da execução
+    // Verificação de permissões
     this.permissionManager.assertAllowed(
-      {
-        taskId: task.id,
-        agentId: task.assignedAgent,
-      },
+      { taskId: task.id, agentId: task.assignedAgent },
       task.securityPolicy
     );
 
-    // Comunicação inicial via MessageBus
-    await this.messageBus.sendMessage({
-      taskId: task.id,
-      correlationId: (task.metadata['planId'] as string) ?? task.id,
-      source: 'orchestrator',
-      target: task.assignedAgent,
-      type: 'TASK_ASSIGN',
-      payload: {
-        title: task.title,
-        description: task.description,
-        type: task.type,
-      },
-    });
+    // Isolamento opcional de Git Worktree para tarefas que alteram código
+    const shouldIsolateWorktree =
+      this.config.enableWorktrees !== false &&
+      ['implementation', 'refactoring', 'debugging'].includes(task.type);
 
-    // Execução física no adaptador CLI
-    const result = await adapter.execute({
-      task,
-      signal,
-      workingDirectory: this.config.workingDirectory ?? process.cwd(),
-      onChunk: (chunk) => {
-        this.eventBus.emitEvent(
-          'task:progress',
-          { chunk },
-          { taskId: task.id, agentId: task.assignedAgent! }
-        );
-      },
-    });
+    let worktreeSession = shouldIsolateWorktree ? this.worktreeManager.createWorktree(task.id) : null;
+    const effectiveWorkingDir = worktreeSession?.worktreePath ?? (this.config.workingDirectory ?? process.cwd());
 
-    // Comunicação de entrega final
-    await this.messageBus.sendMessage({
-      taskId: task.id,
-      correlationId: (task.metadata['planId'] as string) ?? task.id,
-      source: task.assignedAgent,
-      target: 'orchestrator',
-      type: 'TASK_COMPLETE',
-      payload: result,
-    });
+    // Injeção de memória do projeto (COAGENT.md)
+    const originalDescription = task.description;
+    task.description = this.projectMemory.formatPromptContext(originalDescription);
 
-    return result.rawJson ?? result.output;
+    try {
+      // Comunicação via MessageBus
+      await this.messageBus.sendMessage({
+        taskId: task.id,
+        correlationId: (task.metadata['planId'] as string) ?? task.id,
+        source: 'orchestrator',
+        target: task.assignedAgent,
+        type: 'TASK_ASSIGN',
+        payload: {
+          title: task.title,
+          description: task.description,
+          type: task.type,
+          worktreePath: worktreeSession?.worktreePath,
+        },
+      });
+
+      // Execução física no processo do agente
+      const isDangerBypass =
+        Boolean(this.config.dangerouslySkipPermissions) ||
+        Boolean(task.securityPolicy?.dangerouslySkipPermissions);
+
+      const result = await adapter.execute({
+        task,
+        signal,
+        workingDirectory: effectiveWorkingDir,
+        dangerouslySkipPermissions: isDangerBypass,
+        onChunk: (chunk) => {
+          this.eventBus.emitEvent(
+            'task:progress',
+            { chunk },
+            { taskId: task.id, agentId: task.assignedAgent! }
+          );
+        },
+      });
+
+      // Se utilizou worktree isolada, faz merge seguro de volta
+      if (worktreeSession) {
+        this.worktreeManager.mergeWorktree(worktreeSession);
+      }
+
+      await this.messageBus.sendMessage({
+        taskId: task.id,
+        correlationId: (task.metadata['planId'] as string) ?? task.id,
+        source: task.assignedAgent,
+        target: 'orchestrator',
+        type: 'TASK_COMPLETE',
+        payload: result,
+      });
+
+      return result.rawJson ?? result.output;
+    } finally {
+      task.description = originalDescription; // Restaura descrição original
+      if (worktreeSession) {
+        this.worktreeManager.removeWorktree(task.id);
+      }
+    }
   }
 
   public getSystemStatus() {
@@ -216,6 +276,10 @@ export class CoAgentOrchestrator {
       concurrency: {
         active: this.scheduler.activeTasks.length,
         max: 4,
+      },
+      projectMemory: {
+        loaded: Boolean(this.projectMemory.getLoadedPath()),
+        path: this.projectMemory.getLoadedPath(),
       },
     };
   }

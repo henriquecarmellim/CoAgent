@@ -6,6 +6,7 @@ export interface AdapterExecutionOptions {
   task: Task;
   signal?: AbortSignal;
   workingDirectory?: string;
+  dangerouslySkipPermissions?: boolean;
   onChunk?: (chunk: string) => void;
   onProgress?: (progressPercent: number, stage: string) => void;
 }

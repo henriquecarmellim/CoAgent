@@ -22,6 +22,9 @@ export interface BootstrapOptions {
   dbPath?: string;
   maxGlobalParallelism?: number;
   workingDirectory?: string;
+  dangerouslySkipPermissions?: boolean;
+  enableWorktrees?: boolean;
+  enableSelfHealing?: boolean;
 }
 
 export interface CoAgentInstance {
@@ -65,6 +68,10 @@ export function bootstrapCoAgent(options?: BootstrapOptions): CoAgentInstance {
     eventBus
   );
 
+  if (options?.dangerouslySkipPermissions) {
+    permissionManager.setDangerouslySkipPermissions(true);
+  }
+
   const orchestrator = new CoAgentOrchestrator(
     taskManager,
     scheduler,
@@ -76,6 +83,9 @@ export function bootstrapCoAgent(options?: BootstrapOptions): CoAgentInstance {
     {
       workingDirectory: options?.workingDirectory ?? process.cwd(),
       maxGlobalParallelism: options?.maxGlobalParallelism ?? 4,
+      dangerouslySkipPermissions: options?.dangerouslySkipPermissions,
+      enableWorktrees: options?.enableWorktrees,
+      enableSelfHealing: options?.enableSelfHealing,
     }
   );
 

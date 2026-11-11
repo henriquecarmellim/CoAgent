@@ -64,7 +64,12 @@ export class OpenCodeAdapter extends BaseCliAdapter {
       args.push('-m', task.targetModel);
     }
 
-    if (task.securityPolicy?.level === 'workspace-write' || task.securityPolicy?.level === 'danger-full-access') {
+    if (
+      options.dangerouslySkipPermissions ||
+      task.securityPolicy?.dangerouslySkipPermissions ||
+      task.securityPolicy?.level === 'workspace-write' ||
+      task.securityPolicy?.level === 'danger-full-access'
+    ) {
       args.push('--auto');
     }
 
