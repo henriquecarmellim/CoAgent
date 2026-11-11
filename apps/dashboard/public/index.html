@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CoAgent — Multi-Agent Orchestration Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: rgba(18, 24, 38, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --primary: #3b82f6;
+      --primary-glow: rgba(59, 130, 246, 0.3);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --accent: #8b5cf6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(139, 92, 246, 0.08) 0%, transparent 40%);
+    }
+
+    header {
+      padding: 1.25rem 2rem;
+      border-bottom: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(9, 13, 22, 0.8);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: white;
+      font-size: 1.1rem;
+      box-shadow: 0 0 16px var(--primary-glow);
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    main {
+      padding: 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .agents-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .agent-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      backdrop-filter: blur(8px);
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .agent-card:hover {
+      border-color: rgba(59, 130, 246, 0.3);
+      transform: translateY(-2px);
+    }
+
+    .agent-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+
+    .agent-name {
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+
+    .agent-status-tag {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 6px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-idle { background: rgba(16, 185, 129, 0.15); color: var(--success); }
+    .status-busy { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
+    .status-offline { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+
+    .agent-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+      line-height: 1.4;
+      min-height: 2.2rem;
+    }
+
+    .agent-metrics {
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid var(--card-border);
+      padding-top: 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    .metric-value {
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .slots-container {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .slots-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .slot-item {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px dashed var(--card-border);
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    .slot-item.active {
+      border-style: solid;
+      border-color: var(--primary);
+      background: rgba(59, 130, 246, 0.05);
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.1);
+    }
+
+    .slot-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.35rem;
+      font-weight: 600;
+    }
+
+    .slot-status {
+      font-weight: 700;
+      font-size: 0.95rem;
+    }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: 2fr 1.2fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .content-grid { grid-template-columns: 1fr; }
+      .slots-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .tasks-card, .logs-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    th {
+      text-align: left;
+      padding: 0.75rem;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--card-border);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+    }
+
+    td {
+      padding: 0.75rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .badge-completed { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+    .badge-running { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+    .badge-queued { background: rgba(59, 130, 246, 0.2); color: var(--primary); }
+    .badge-failed { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+    .badge-cancelled { background: rgba(148, 163, 184, 0.2); color: var(--text-muted); }
+
+    .terminal-feed {
+      background: #05070c;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      height: 380px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .log-line {
+      line-height: 1.4;
+      word-break: break-all;
+    }
+
+    .log-time { color: var(--text-muted); margin-right: 0.5rem; }
+    .log-event { color: var(--accent); font-weight: 600; margin-right: 0.5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-logo">C</div>
+      <div>
+        <div class="brand-title">CoAgent</div>
+        <div class="brand-subtitle">Multi-Agent Orchestrator</div>
+      </div>
+    </div>
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      <span>Orquestrador Conectado</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Agentes Integrados -->
+    <section>
+      <div class="section-title">🤖 Agentes Especializados Registrados</div>
+      <div class="agents-grid" id="agentsList">
+        <div class="agent-card">Carregando agentes...</div>
+      </div>
+    </section>
+
+    <!-- Concorrência: Slots Paralelos -->
+    <section class="slots-container">
+      <div class="section-title">⚡ Slots de Concorrência Paralela (4 Simultâneos)</div>
+      <div class="slots-grid" id="slotsGrid">
+        <div class="slot-item"><div class="slot-label">Slot 1</div><div class="slot-status">Livre</div></div>
+        <div class="slot-item"><div class="slot-label">Slot 2</div><div class="slot-status">Livre</div></div>
+        <div class="slot-item"><div class="slot-label">Slot 3</div><div class="slot-status">Livre</div></div>
+        <div class="slot-item"><div class="slot-label">Slot 4</div><div class="slot-status">Livre</div></div>
+      </div>
+    </section>
+
+    <!-- Tarefas e Logs ao Vivo -->
+    <div class="content-grid">
+      <div class="tasks-card">
+        <div class="section-title">📋 Ciclo de Vida de Tarefas</div>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Título</th>
+              <th>Tipo</th>
+              <th>Status</th>
+              <th>Agente</th>
+            </tr>
+          </thead>
+          <tbody id="tasksTable">
+            <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Carregando tarefas...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="logs-card">
+        <div class="section-title">📡 Eventos e Logs em Tempo Real (SSE)</div>
+        <div class="terminal-feed" id="terminalFeed">
+          <div class="log-line"><span class="log-time">[System]</span> Conectando ao canal de eventos SSE...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    async function loadData() {
+      try {
+        const resStatus = await fetch('/api/status');
+        const status = await resStatus.json();
+
+        // Renderizar Agentes
+        const agentsContainer = document.getElementById('agentsList');
+        agentsContainer.innerHTML = status.agents.map(a => `
+          <div class="agent-card">
+            <div class="agent-header">
+              <span class="agent-name">${a.name}</span>
+              <span class="agent-status-tag status-${a.status}">${a.status}</span>
+            </div>
+            <div class="agent-desc">${a.description}</div>
+            <div class="agent-metrics">
+              <span>Tarefas Ativas: <span class="metric-value">${a.activeTasksCount}/${a.capabilities.maxConcurrency}</span></span>
+              <span>Concluídas: <span class="metric-value" style="color:var(--success)">${a.totalTasksCompleted}</span></span>
+            </div>
+          </div>
+        `).join('');
+
+        // Renderizar Slots
+        const slotsGrid = document.getElementById('slotsGrid');
+        const activeCount = status.concurrency.active || 0;
+        slotsGrid.innerHTML = [1, 2, 3, 4].map(i => {
+          const isActive = i <= activeCount;
+          return `
+            <div class="slot-item ${isActive ? 'active' : ''}">
+              <div class="slot-label">Slot #${i}</div>
+              <div class="slot-status" style="color:${isActive ? 'var(--warning)' : 'var(--success)'}">
+                ${isActive ? 'Ocupado' : 'Disponível'}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Renderizar Tarefas
+        const resTasks = await fetch('/api/tasks?limit=15');
+        const tasks = await resTasks.json();
+        const tasksTable = document.getElementById('tasksTable');
+        if (tasks.length === 0) {
+          tasksTable.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Nenhuma tarefa registrada no momento.</td></tr>';
+        } else {
+          tasksTable.innerHTML = tasks.map(t => `
+            <tr>
+              <td style="font-family:'JetBrains Mono';font-size:0.75rem;">${t.id.slice(0, 12)}...</td>
+              <td><strong>${t.title}</strong></td>
+              <td><span style="font-size:0.75rem;color:var(--text-muted)">${t.type}</span></td>
+              <td><span class="badge badge-${t.status}">${t.status}</span></td>
+              <td>${t.assignedAgent || 'auto'}</td>
+            </tr>
+          `).join('');
+        }
+      } catch (err) {
+        console.error('Erro ao atualizar dashboard:', err);
+      }
+    }
+
+    // Inicialização e polling de atualização regular
+    loadData();
+    setInterval(loadData, 3000);
+
+    // Conexão Server-Sent Events (SSE)
+    const eventSource = new EventSource('/api/events');
+    const feed = document.getElementById('terminalFeed');
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        const time = new Date(data.timestamp).toLocaleTimeString();
+        const line = document.createElement('div');
+        line.className = 'log-line';
+        line.innerHTML = `<span class="log-time">[${time}]</span><span class="log-event">${data.type}</span> <span>${JSON.stringify(data.payload)}</span>`;
+        feed.appendChild(line);
+        feed.scrollTop = feed.scrollHeight;
+        loadData();
+      } catch (e) {
+        console.error('Erro ao processar evento SSE', e);
+      }
+    };
+  </script>
+</body>
+</html>

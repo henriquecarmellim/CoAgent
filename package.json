@@ -1,0 +1,26 @@
+{
+  "name": "coagent-monorepo",
+  "version": "1.0.0",
+  "description": "CoAgent - Framework modular de orquestração multiagente de IA",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "cli": "npm --workspace=@coagent/cli run start --"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.7",
+    "@types/node": "^24.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "license": "MIT"
+}

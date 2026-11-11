@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "composite": true
+  },
+  "references": [
+    { "path": "../shared" },
+    { "path": "../protocol" },
+    { "path": "../core" },
+    { "path": "../scheduler" },
+    { "path": "../adapters" }
+  ],
+  "include": ["src/**/*"]
+}

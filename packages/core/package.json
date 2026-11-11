@@ -1,0 +1,21 @@
+{
+  "name": "@coagent/core",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@coagent/shared": "*",
+    "@coagent/protocol": "*",
+    "@coagent/storage": "*"
+  },
+  "scripts": {
+    "build": "tsc"
+  }
+}
