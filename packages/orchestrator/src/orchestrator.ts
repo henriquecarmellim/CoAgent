@@ -17,6 +17,7 @@ import { PlanDecomposer, ExecutionPlan } from './plan-decomposer.js';
 import { ResultAggregator, ConsolidatedResult } from './result-aggregator.js';
 import { AdvisorEngine, AdvisorCritique } from './advisor-engine.js';
 import { SelfHealingController } from './self-healing.js';
+import { IntelligenceCascader, IntelligenceTier } from './intelligence-cascader.js';
 
 export interface CoAgentOrchestratorConfig {
   maxGlobalParallelism?: number;
@@ -24,6 +25,7 @@ export interface CoAgentOrchestratorConfig {
   enableWorktrees?: boolean;
   enableSelfHealing?: boolean;
   dangerouslySkipPermissions?: boolean;
+  defaultTier?: IntelligenceTier;
 }
 
 export class CoAgentOrchestrator {
@@ -35,6 +37,7 @@ export class CoAgentOrchestrator {
   public readonly projectMemory: ProjectMemoryManager;
   public readonly worktreeManager: WorktreeManager;
   public readonly selfHealing: SelfHealingController;
+  public readonly cascader: IntelligenceCascader;
   private readonly logger: Logger;
 
   constructor(
@@ -54,6 +57,7 @@ export class CoAgentOrchestrator {
     this.projectMemory = new ProjectMemoryManager(config.workingDirectory);
     this.worktreeManager = new WorktreeManager(config.workingDirectory);
     this.selfHealing = new SelfHealingController();
+    this.cascader = new IntelligenceCascader();
     this.logger = createLogger('orchestrator:engine');
 
     if (config.dangerouslySkipPermissions) {
@@ -77,16 +81,20 @@ export class CoAgentOrchestrator {
   }
 
   /**
-   * Executa um objetivo completo de alto nível com consultoria do Advisor e auto-cura.
+   * Executa um objetivo completo de alto nível com consultoria do Advisor, auto-cura e cascata até zerar o plano.
    */
   public async executeObjective(
     goal: string,
     options?: {
       onProgress?: (completed: number, total: number) => void;
       onAdvisorCritique?: (critique: AdvisorCritique) => void;
+      exhaustUntilComplete?: boolean;
+      intelligenceTier?: IntelligenceTier;
     }
   ): Promise<ConsolidatedResult> {
-    this.logger.info(`Recebido objetivo para orquestração: "${goal}"`);
+    this.logger.info(`Recebido objetivo para orquestração: "${goal}" (Exhaust: ${options?.exhaustUntilComplete ?? true})`);
+
+    const activeTier: IntelligenceTier = options?.intelligenceTier ?? this.config.defaultTier ?? 'max';
 
     // 1. Decomposição do Objetivo
     const plan: ExecutionPlan = this.planDecomposer.decomposeObjective(goal);
@@ -103,11 +111,11 @@ export class CoAgentOrchestrator {
       title: `[Orquestração] ${goal}`,
       type: 'general',
       priority: 'high',
-      metadata: { isMainObjective: true, planId: plan.id, advisorScore: critique.score },
+      metadata: { isMainObjective: true, planId: plan.id, advisorScore: critique.score, tier: activeTier },
     }).id;
     this.taskManager.transitionStatus(mainTaskId, 'running');
 
-    // 4. Criação e atribuição das subtarefas com SmartDelegator
+    // 4. Criação e atribuição das subtarefas com SmartDelegator e IntelligenceTier
     const subtaskDefs = this.planDecomposer.toTaskDefinitions(plan, mainTaskId);
     const createdTasks: Task[] = [];
     let implementationAgentId: string | undefined;
@@ -118,7 +126,13 @@ export class CoAgentOrchestrator {
       const assigned = this.smartDelegator.selectBestAgent(task, { excludeAgentId });
 
       task.assignedAgent = assigned.id;
-      this.taskManager.transitionStatus(task.id, 'pending', { assignedAgent: assigned.id });
+      // Define modelo recomendado pelo Tier de inteligência mais alto
+      task.targetModel = IntelligenceCascader.getRecommendedModel(assigned.provider, activeTier);
+
+      this.taskManager.transitionStatus(task.id, 'pending', {
+        assignedAgent: assigned.id,
+        targetModel: task.targetModel,
+      });
 
       if (def.type === 'implementation') {
         implementationAgentId = assigned.id;
@@ -132,26 +146,67 @@ export class CoAgentOrchestrator {
       this.scheduler.submitTask(task);
     }
 
-    // 6. Monitoramento de execução e suporte a Self-Healing Loop
+    // 6. Monitoramento de execução e Cascata de Fallback até zerar 100% do plano
+    const exhaustMode = options?.exhaustUntilComplete ?? true;
     const pendingIds = new Set(createdTasks.map((t) => t.id));
+
     while (pendingIds.size > 0) {
       await sleep(100);
 
       for (const id of Array.from(pendingIds)) {
         const current = this.taskManager.getTask(id);
         if (current && ['completed', 'failed', 'cancelled'].includes(current.status)) {
-          pendingIds.delete(id);
+          if (current.status === 'completed') {
+            pendingIds.delete(id);
+          } else if (current.status === 'failed') {
+            if (exhaustMode) {
+              // Cascata de Fallback: Chaveia para o próximo modelo/agente na lista de inteligência
+              const assignedAgent = current.assignedAgent ? this.agentRegistry.getAgent(current.assignedAgent) : null;
+              if (assignedAgent) {
+                const fallback = IntelligenceCascader.getNextFallbackModel(
+                  assignedAgent.provider,
+                  current.targetModel,
+                  activeTier
+                );
 
-          // Self-Healing Loop automático em caso de falha
-          if (current.status === 'failed' && this.config.enableSelfHealing !== false) {
-            const diagnosis = this.selfHealing.diagnoseAndHeal(current);
-            if (diagnosis) {
-              this.logger.warn(`Acionando auto-cura para subtarefa [${current.id}]...`);
-              const healingTask = this.taskManager.createTask(diagnosis.healingTaskDefinition);
-              createdTasks.push(healingTask);
-              pendingIds.add(healingTask.id);
-              this.scheduler.submitTask(healingTask);
+                this.logger.warn(
+                  `[Intelligence Cascade] Subtarefa [${current.id}] falhou com modelo ${current.targetModel}. Fazendo fallback para: ${fallback.nextModel ?? 'outro agente'} (${fallback.nextTier})`
+                );
+
+                // Alterna agente ou modelo
+                let nextAgentId = current.assignedAgent;
+                if (current.assignedAgent === 'agy-1') {
+                  nextAgentId = 'agy-2'; // Chaveia do AGY Pro para o AGY Flash
+                } else if (current.assignedAgent === 'agy') {
+                  nextAgentId = 'claude-code';
+                }
+
+                current.assignedAgent = nextAgentId;
+                current.targetModel = fallback.nextModel;
+                this.taskManager.transitionStatus(current.id, 'queued', {
+                  assignedAgent: nextAgentId,
+                  targetModel: fallback.nextModel,
+                });
+                this.scheduler.submitTask(current);
+                continue; // Mantém em pendingIds até zerar
+              }
             }
+
+            // Se auto-cura estiver habilitada e não usou fallback direto
+            if (this.config.enableSelfHealing !== false) {
+              const diagnosis = this.selfHealing.diagnoseAndHeal(current);
+              if (diagnosis) {
+                this.logger.warn(`Acionando auto-cura para subtarefa [${current.id}]...`);
+                const healingTask = this.taskManager.createTask(diagnosis.healingTaskDefinition);
+                createdTasks.push(healingTask);
+                pendingIds.add(healingTask.id);
+                this.scheduler.submitTask(healingTask);
+              }
+            }
+
+            pendingIds.delete(id);
+          } else {
+            pendingIds.delete(id);
           }
 
           if (options?.onProgress) {

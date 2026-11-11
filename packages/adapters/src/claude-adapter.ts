@@ -2,16 +2,30 @@ import { execSync } from 'node:child_process';
 import { AgentMetadata } from '@coagent/protocol';
 import { BaseCliAdapter, AdapterExecutionOptions } from './base-adapter.js';
 
+export interface ClaudeCodeAdapterOptions {
+  displayName?: string;
+  defaultModel?: string;
+  executablePath?: string;
+  maxConcurrency?: number;
+}
+
 export class ClaudeCodeAdapter extends BaseCliAdapter {
-  constructor(executablePath = 'claude') {
-    super('claude-code', 'claude-code', executablePath);
+  private readonly displayName: string;
+  private readonly defaultModel?: string;
+  private readonly maxConcurrency: number;
+
+  constructor(id = 'claude-code', options?: ClaudeCodeAdapterOptions) {
+    super(id, 'claude-code', options?.executablePath ?? 'claude');
+    this.displayName = options?.displayName ?? (id === 'claude-code' ? 'Claude Code CLI' : `Claude Code (${id})`);
+    this.defaultModel = options?.defaultModel;
+    this.maxConcurrency = options?.maxConcurrency ?? 2;
   }
 
   public getMetadata(): AgentMetadata {
     return {
       id: this.id,
-      name: 'Claude Code CLI',
-      provider: 'claude-code',
+      name: this.displayName,
+      provider: this.provider,
       version: '2.1.322',
       description: 'Especialista em implementação de software, refatoração de código, testes e Git workflows',
       capabilities: {
@@ -28,7 +42,7 @@ export class ClaudeCodeAdapter extends BaseCliAdapter {
         supportsSessions: true,
         supportsTools: true,
         supportsMcp: true,
-        maxConcurrency: 2,
+        maxConcurrency: this.maxConcurrency,
         permissionLevels: ['read-only', 'workspace-write'],
         availableModels: ['claude-3-7-sonnet', 'claude-3-5-haiku'],
       },
@@ -60,8 +74,9 @@ export class ClaudeCodeAdapter extends BaseCliAdapter {
 
     args.push('--output-format', 'json');
 
-    if (task.targetModel) {
-      args.push('--model', task.targetModel);
+    const targetModel = task.targetModel ?? this.defaultModel;
+    if (targetModel) {
+      args.push('--model', targetModel);
     }
 
     if (

@@ -8,11 +8,16 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && npm run build:rust",
+    "build:ts": "tsc -b",
+    "build:rust": "cargo build --manifest-path apps/cli-rust/Cargo.toml",
+    "build:rust-release": "cargo build --release --manifest-path apps/cli-rust/Cargo.toml",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "cli": "npm --workspace=@coagent/cli run start --"
+    "cli": "apps/cli-rust/target/debug/coagent.exe",
+    "cli:node": "node apps/cli/dist/index.js",
+    "start:backend": "node apps/dashboard/dist/server.js"
   },
   "devDependencies": {
     "typescript": "^5.8.2",

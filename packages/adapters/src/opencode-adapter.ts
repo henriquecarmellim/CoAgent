@@ -2,16 +2,30 @@ import { execSync } from 'node:child_process';
 import { AgentMetadata } from '@coagent/protocol';
 import { BaseCliAdapter, AdapterExecutionOptions } from './base-adapter.js';
 
+export interface OpenCodeAdapterOptions {
+  displayName?: string;
+  defaultModel?: string;
+  executablePath?: string;
+  maxConcurrency?: number;
+}
+
 export class OpenCodeAdapter extends BaseCliAdapter {
-  constructor(executablePath = 'opencode') {
-    super('opencode', 'opencode', executablePath);
+  private readonly displayName: string;
+  private readonly defaultModel?: string;
+  private readonly maxConcurrency: number;
+
+  constructor(id = 'opencode', options?: OpenCodeAdapterOptions) {
+    super(id, 'opencode', options?.executablePath ?? 'opencode');
+    this.displayName = options?.displayName ?? (id === 'opencode' ? 'OpenCode CLI' : `OpenCode (${id})`);
+    this.defaultModel = options?.defaultModel;
+    this.maxConcurrency = options?.maxConcurrency ?? 2;
   }
 
   public getMetadata(): AgentMetadata {
     return {
       id: this.id,
-      name: 'OpenCode CLI',
-      provider: 'opencode',
+      name: this.displayName,
+      provider: this.provider,
       version: '1.19.0',
       description: 'Plataforma multi-provedor aberta com suporte a diversos modelos locais e remotos, auditoria e execução',
       capabilities: {
@@ -28,7 +42,7 @@ export class OpenCodeAdapter extends BaseCliAdapter {
         supportsSessions: true,
         supportsTools: true,
         supportsMcp: true,
-        maxConcurrency: 2,
+        maxConcurrency: this.maxConcurrency,
         permissionLevels: ['read-only', 'workspace-write'],
         availableModels: ['anthropic/claude-3-7-sonnet', 'openai/gpt-4o', 'deepseek/deepseek-chat'],
       },
@@ -60,8 +74,9 @@ export class OpenCodeAdapter extends BaseCliAdapter {
 
     args.push('--format', 'json');
 
-    if (task.targetModel) {
-      args.push('-m', task.targetModel);
+    const targetModel = task.targetModel ?? this.defaultModel;
+    if (targetModel) {
+      args.push('-m', targetModel);
     }
 
     if (

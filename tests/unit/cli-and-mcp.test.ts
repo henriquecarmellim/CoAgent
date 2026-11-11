@@ -12,11 +12,13 @@ describe('CoAgent Bootstrap & Integrations Test Suite', () => {
     coagent.db.close();
   });
 
-  it('deve inicializar com os 4 adaptadores oficiais registrados', () => {
+  it('deve inicializar com os adaptadores registrados (incluindo as 2 instâncias de Antigravity: agy-1 e agy-2)', () => {
     const agents = coagent.agentRegistry.listAgents();
-    expect(agents.length).toBe(4);
+    expect(agents.length).toBe(6);
 
     const agentIds = agents.map((a) => a.id);
+    expect(agentIds).toContain('agy-1');
+    expect(agentIds).toContain('agy-2');
     expect(agentIds).toContain('agy');
     expect(agentIds).toContain('claude-code');
     expect(agentIds).toContain('codex');
@@ -40,9 +42,34 @@ describe('CoAgent Bootstrap & Integrations Test Suite', () => {
 
   it('deve fornecer status completo do sistema e concorrência', () => {
     const status = coagent.orchestrator.getSystemStatus();
-    expect(status.agents.length).toBe(4);
+    expect(status.agents.length).toBe(6);
     expect(status.concurrency.max).toBe(4);
     expect(status.concurrency.active).toBe(0);
     expect(status.activeTasks.length).toBe(0);
+  });
+
+  it('deve executar cascata de inteligência com fallback até zerar tarefas', async () => {
+    const executionLogs: string[] = [];
+    const simulatedError = new Error('429 Rate Limit / Quota esgotada no modelo pro-max');
+
+    // Executa tarefa via cascata onde agy-1 falha por quota e agy-2 assume com sucesso
+    const result = await coagent.cascader.executeWithCascade(
+      {
+        title: 'Gerar script de deploy',
+        description: 'Criar pipeline seguro de deploy',
+        preferredAgent: 'agy-1',
+      },
+      async (agentId, model) => {
+        executionLogs.push(`${agentId}:${model}`);
+        if (agentId === 'agy-1') {
+          throw simulatedError;
+        }
+        return { success: true, agentId, model, output: 'Deploy gerado com sucesso via agy-2!' };
+      }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.agentId).toBe('agy-2');
+    expect(executionLogs).toEqual(['agy-1:gemini-2.5-pro', 'agy-2:gemini-2.5-flash']);
   });
 });

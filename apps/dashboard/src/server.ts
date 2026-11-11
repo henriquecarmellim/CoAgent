@@ -27,6 +27,11 @@ export async function startDashboardServer(
     return coagent.orchestrator.getSystemStatus();
   });
 
+  // REST: Listagem de Agentes
+  fastify.get('/api/agents', async () => {
+    return coagent.agentRegistry.listAgents();
+  });
+
   // REST: Listagem de Tarefas
   fastify.get('/api/tasks', async (req) => {
     const query = req.query as { limit?: string; status?: string };
@@ -38,6 +43,17 @@ export async function startDashboardServer(
     return tasks;
   });
 
+  // REST: Detalhe de Tarefa
+  fastify.get('/api/tasks/:id', async (req, reply) => {
+    const params = req.params as { id: string };
+    const task = coagent.taskManager.getTask(params.id);
+    if (!task) {
+      reply.status(404);
+      return { error: `Tarefa ${params.id} não encontrada` };
+    }
+    return task;
+  });
+
   // REST: Criar Tarefa
   fastify.post('/api/tasks', async (req) => {
     const body = req.body as {
@@ -46,6 +62,7 @@ export async function startDashboardServer(
       type?: string;
       priority?: string;
       agentId?: string;
+      dangerouslySkipPermissions?: boolean;
     };
 
     const task = coagent.taskManager.createTask({
@@ -54,6 +71,9 @@ export async function startDashboardServer(
       type: (body.type as any) ?? 'general',
       priority: (body.priority as any) ?? 'normal',
       assignedAgent: body.agentId,
+      securityPolicy: {
+        dangerouslySkipPermissions: body.dangerouslySkipPermissions ?? false,
+      },
     });
 
     coagent.scheduler.submitTask(task);
@@ -70,8 +90,95 @@ export async function startDashboardServer(
   // REST: Rejeitar Tarefa
   fastify.post('/api/tasks/:id/reject', async (req) => {
     const params = req.params as { id: string };
-    coagent.scheduler.cancelRunningTask(params.id, 'Rejeitado pelo usuário via Dashboard');
+    coagent.scheduler.cancelRunningTask(params.id, 'Rejeitado pelo usuário');
     return { success: true, taskId: params.id, status: 'cancelled' };
+  });
+
+  // REST: Cancelar Tarefa
+  fastify.post('/api/tasks/:id/cancel', async (req) => {
+    const params = req.params as { id: string };
+    coagent.scheduler.cancelRunningTask(params.id, 'Cancelado via API');
+    return { success: true, taskId: params.id, status: 'cancelled' };
+  });
+
+  // REST: Executar Objetivo Completo (Orquestração Multiagente)
+  fastify.post('/api/objective', async (req) => {
+    const body = req.body as {
+      goal: string;
+      exhaustUntilComplete?: boolean;
+    };
+
+    const result = await coagent.orchestrator.executeObjective(body.goal, {
+      exhaustUntilComplete: body.exhaustUntilComplete ?? true,
+    });
+    return result;
+  });
+
+  // REST: CoAgent Advisor
+  fastify.post('/api/advise', async (req) => {
+    const body = req.body as { query: string; context?: string };
+    const advice = await coagent.orchestrator.advisor.advise(body.query, body.context);
+    return { advice };
+  });
+
+  // REST: CoAgent Review (Ultrareview)
+  fastify.post('/api/review', async (req) => {
+    const body = req.body as { diff: string };
+    const review = coagent.orchestrator.advisor.reviewDiff(body.diff);
+    return review;
+  });
+
+  // REST: Teste de Validação Rápida (Hello World)
+  fastify.post('/api/test', async (req) => {
+    const body = req.body as { agentId?: string };
+    const targetAgents = body.agentId
+      ? coagent.agentRegistry.listAgents().filter((a) => a.id === body.agentId)
+      : coagent.agentRegistry.listAgents();
+
+    const results: Array<{ agentId: string; name: string; success: boolean; output?: string; error?: string }> = [];
+
+    for (const agent of targetAgents) {
+      const testTask = coagent.taskManager.createTask({
+        title: `Teste Hello World (${agent.id})`,
+        description: 'Responda com HELLO_COAGENT_OK',
+        type: 'general',
+        priority: 'high',
+        assignedAgent: agent.id,
+        timeoutMs: 30_000,
+        securityPolicy: { dangerouslySkipPermissions: true },
+      });
+
+      coagent.scheduler.submitTask(testTask);
+
+      let attempts = 0;
+      let finished = false;
+      while (!finished && attempts < 50) {
+        await new Promise((r) => setTimeout(r, 100));
+        const current = coagent.taskManager.getTask(testTask.id);
+        if (current && ['completed', 'failed', 'cancelled'].includes(current.status)) {
+          finished = true;
+          results.push({
+            agentId: agent.id,
+            name: agent.name,
+            success: current.status === 'completed',
+            output: typeof current.result === 'string' ? current.result : JSON.stringify(current.result),
+            error: current.error?.message,
+          });
+        }
+        attempts++;
+      }
+
+      if (!finished) {
+        results.push({
+          agentId: agent.id,
+          name: agent.name,
+          success: false,
+          error: 'Timeout aguardando execução',
+        });
+      }
+    }
+
+    return { results };
   });
 
   // SSE: Server-Sent Events para atualização em tempo real

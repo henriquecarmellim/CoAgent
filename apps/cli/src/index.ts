@@ -1,10 +1,32 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+// Se o binário nativo em Rust existir, delega a execução com máxima performance
+const __filename = fileURLToPath(import.meta.url);
+const rootDir = resolve(dirname(__filename), '../../..');
+const rustExeRelease = resolve(rootDir, 'apps/cli-rust/target/release/coagent.exe');
+const rustExeDebug = resolve(rootDir, 'apps/cli-rust/target/debug/coagent.exe');
+const rustExe = existsSync(rustExeRelease) ? rustExeRelease : (existsSync(rustExeDebug) ? rustExeDebug : null);
+
+if (rustExe && !process.env['COAGENT_FORCE_NODE']) {
+  const res = spawnSync(rustExe, process.argv.slice(2), { stdio: 'inherit' });
+  process.exit(res.status ?? 0);
+}
+
 import { Command } from 'commander';
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import ora from 'ora';
 import { createInterface } from 'node:readline';
 import { execSync } from 'node:child_process';
+
+if (!process.env['COAGENT_LOG_LEVEL'] && !process.env['DEBUG']) {
+  process.env['COAGENT_LOG_LEVEL'] = 'warn';
+}
+
 import { bootstrapCoAgent } from '@coagent/orchestrator';
 import { TaskPriority, TaskType } from '@coagent/protocol';
 
@@ -91,13 +113,29 @@ async function startInteractiveSession(initialPrompt?: string) {
         case 'help':
         case 'ajuda':
           console.log(chalk.bold('\n📖 Comandos do CoAgent Shell:'));
-          console.log('  /agents          - Lista os 4 agentes conectados e seus status');
+          console.log('  /test [id]       - Roda validação Hello World no agente ou em todos');
+          console.log('  /agents          - Lista os agentes conectados e seus status');
           console.log('  /status          - Exibe uso dos slots de concorrência e tarefas');
           console.log('  /tasks           - Lista as tarefas recentes e seus estados');
           console.log('  /advise <dúvida> - Consulta o CoAgent Advisor sênior');
           console.log('  /review          - Roda o Ultrareview no git diff do repositório');
           console.log('  /clear           - Limpa o terminal');
           console.log('  /exit            - Encerra a sessão interativa\n');
+          break;
+
+        case 'test':
+          console.log(chalk.cyan(`\nIniciando validação básica (Hello World)...`));
+          const targetAgent = argStr || 'agy-1';
+          const tTask = coagent.taskManager.createTask({
+            title: `Teste Hello World (${targetAgent})`,
+            description: 'Responda exatamente apenas: "HELLO_COAGENT_OK"',
+            type: 'general',
+            priority: 'high',
+            assignedAgent: targetAgent,
+            securityPolicy: { dangerouslySkipPermissions: true },
+          });
+          coagent.scheduler.submitTask(tTask);
+          console.log(chalk.green(`✓ Tarefa de teste despachada para ${targetAgent} (ID: ${tTask.id})\n`));
           break;
 
         case 'agents':
@@ -257,6 +295,76 @@ program
 
     // Comportamento Padrão: entra direto na Sessão Interativa TUI
     await startInteractiveSession(promptText);
+  });
+
+// ==========================================
+// Subcomando: TEST (Validação Rápida / Hello World)
+// ==========================================
+program
+  .command('test [agentId]')
+  .description('Executa um teste básico ("Hello World") para validar a conectividade e execução de um ou todos os agentes')
+  .action(async (agentId?: string) => {
+    console.log(chalk.bold.cyan('\n🧪 CoAgent — Teste de Validação Básica (Hello World):\n'));
+
+    const agentsToTest = agentId
+      ? coagent.agentRegistry.listAgents().filter((a) => a.id === agentId)
+      : coagent.agentRegistry.listAgents();
+
+    if (agentsToTest.length === 0) {
+      console.log(chalk.red(`Nenhum agente encontrado com ID: "${agentId}"\n`));
+      return;
+    }
+
+    for (const agent of agentsToTest) {
+      const spinner = ora(`Testando conectividade e execução com ${agent.name} (${agent.id})...`).start();
+      const testTask = coagent.taskManager.createTask({
+        title: `Teste Hello World (${agent.id})`,
+        description: 'Responda exatamente apenas com a palavra: "HELLO_COAGENT_OK"',
+        type: 'general',
+        priority: 'high',
+        assignedAgent: agent.id,
+        timeoutMs: 30_000,
+        securityPolicy: {
+          dangerouslySkipPermissions: true,
+        },
+      });
+
+      try {
+        coagent.scheduler.submitTask(testTask);
+
+        // Aguarda execução
+        let completed = false;
+        let attempts = 0;
+        while (!completed && attempts < 100) {
+          await new Promise((r) => setTimeout(r, 200));
+          const current = coagent.taskManager.getTask(testTask.id);
+          if (current && ['completed', 'failed', 'cancelled'].includes(current.status)) {
+            completed = true;
+            if (current.status === 'completed') {
+              spinner.succeed(chalk.green(`✓ [${agent.id}] ${agent.name} respondendo com sucesso!`));
+              if (current.result) {
+                const preview = typeof current.result === 'string' ? current.result : JSON.stringify(current.result);
+                console.log(chalk.gray(`   Saída: ${preview.slice(0, 120)}...\n`));
+              }
+            } else {
+              spinner.warn(chalk.yellow(`⚠️ [${agent.id}] ${agent.name} finalizou com status: ${current.status}`));
+              if (current.error) {
+                console.log(chalk.gray(`   Detalhe: ${current.error.message.slice(0, 140)}...\n`));
+              }
+            }
+          }
+          attempts++;
+        }
+
+        if (!completed) {
+          spinner.fail(chalk.red(`✖ [${agent.id}] Tempo limite excedido aguardando resposta.`));
+        }
+      } catch (err) {
+        spinner.fail(chalk.red(`✖ [${agent.id}] Erro ao despachar teste: ${err instanceof Error ? err.message : String(err)}`));
+      }
+    }
+
+    console.log(chalk.bold.green('Validação concluída.\n'));
   });
 
 // ==========================================
