@@ -12,7 +12,10 @@ const rustExeDebug = resolve(rootDir, 'apps/cli-rust/target/debug/coagent.exe');
 const rustExe = existsSync(rustExeRelease) ? rustExeRelease : (existsSync(rustExeDebug) ? rustExeDebug : null);
 
 if (rustExe && !process.env['COAGENT_FORCE_NODE']) {
-  const res = spawnSync(rustExe, process.argv.slice(2), { stdio: 'inherit' });
+  const res = spawnSync(rustExe, process.argv.slice(2), {
+    stdio: 'inherit',
+    env: { ...process.env, COAGENT_ROOT: rootDir },
+  });
   process.exit(res.status ?? 0);
 }
 

@@ -1,5 +1,6 @@
 use crate::types::*;
 use reqwest::Client;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -20,18 +21,53 @@ impl CoAgentClient {
         Self { base_url, http }
     }
 
+    /// Resolve o caminho absoluto para o script do servidor backend (server.js)
+    fn resolve_server_script() -> PathBuf {
+        // 1. Variável de ambiente COAGENT_ROOT informada pelo launcher
+        if let Ok(root) = std::env::var("COAGENT_ROOT") {
+            let p = Path::new(&root).join("apps").join("dashboard").join("dist").join("server.js");
+            if p.exists() {
+                return p;
+            }
+        }
+
+        // 2. Baseado na localização do próprio executável coagent.exe
+        if let Ok(mut exe_path) = std::env::current_exe() {
+            // Sobe da pasta target/debug ou target/release até a raiz
+            for _ in 0..4 {
+                exe_path.pop();
+            }
+            let p = exe_path.join("apps").join("dashboard").join("dist").join("server.js");
+            if p.exists() {
+                return p;
+            }
+        }
+
+        // 3. Caminho local relativo ao diretório atual
+        let local_p = PathBuf::from("apps/dashboard/dist/server.js");
+        if local_p.exists() {
+            return local_p;
+        }
+
+        // 4. Fallback padrão conhecido de instalação
+        PathBuf::from(r"C:\Users\gxote\OneDrive\Área de Trabalho\CoAgent\apps\dashboard\dist\server.js")
+    }
+
     /// Garante que o backend TypeScript está respondendo. Caso contrário, inicia em segundo plano.
     pub async fn ensure_backend_running(&self) -> Result<(), String> {
         if self.health_check().await.is_ok() {
             return Ok(());
         }
 
-        // Tenta iniciar o backend TypeScript automaticamente
+        let server_path = Self::resolve_server_script();
+
+        // Tenta iniciar o backend TypeScript automaticamente com caminho absoluto
         let _ = Command::new("node")
-            .arg("apps/dashboard/dist/server.js")
+            .arg(&server_path)
+            .env("COAGENT_LOG_LEVEL", "warn")
             .spawn();
 
-        for _ in 0..15 {
+        for _ in 0..20 {
             sleep(Duration::from_millis(300)).await;
             if self.health_check().await.is_ok() {
                 return Ok(());
