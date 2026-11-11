@@ -80,6 +80,9 @@ enum Commands {
     #[command(about = "Exibe as configurações ativas do CoAgent")]
     Config,
 
+    #[command(about = "Assistente de autenticação e login de contas (Google, Claude, Codex, OpenCode)")]
+    Addagents,
+
     #[command(about = "Abre ou exibe o endereço do Web Dashboard")]
     Dashboard {
         #[arg(short, long, default_value = "3333", help = "Porta do Dashboard")]
@@ -196,12 +199,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("{}", BANNER.cyan().bold());
                 handle_config(cli.dangerously_skip_permissions);
             }
+            Commands::Addagents => {
+                println!("\n{}", "🔑 Assistente de Contas & Agentes (Login)".bold().cyan());
+                println!("Comandos de autenticação oficial dos provedores:\n");
+                println!("• Google Antigravity: {}", "agy auth".green().bold());
+                println!("• Claude Code CLI:    {}", "claude login".green().bold());
+                println!("• OpenAI Codex CLI:   {}", "codex login".green().bold());
+                println!("• OpenCode CLI:       {}", "opencode auth".green().bold());
+                println!("\nOu gerencie e configure quais agentes usar no Dashboard: {}", "http://localhost:3333".cyan().underline());
+                println!();
+            }
             Commands::Dashboard { port } => {
+                let url = format!("http://localhost:{}", port);
                 println!(
-                    "\n{} http://localhost:{}\n",
-                    "🌐 CoAgent Web Dashboard ativo em:".bold().cyan(),
-                    port
+                    "\n{} {}\n",
+                    "🌐 Abrindo CoAgent Web Dashboard no navegador:".bold().cyan(),
+                    url.underline().bold()
                 );
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = std::process::Command::new("cmd").args(["/c", "start", &url]).spawn();
+                }
             }
         }
         return Ok(());

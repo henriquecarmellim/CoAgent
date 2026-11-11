@@ -173,6 +173,88 @@
     .status-idle { background: rgba(16, 185, 129, 0.15); color: var(--success); }
     .status-busy { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
     .status-offline { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+    .status-disabled { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); opacity: 0.6; }
+
+    .agent-card.disabled {
+      opacity: 0.55;
+      filter: grayscale(0.5);
+    }
+
+    /* iOS-style toggle switch */
+    .switch-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--card-border);
+      justify-content: space-between;
+    }
+
+    .switch-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 42px;
+      height: 22px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(255, 255, 255, 0.15);
+      transition: .3s;
+      border-radius: 22px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--primary);
+      box-shadow: 0 0 10px var(--primary-glow);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+    }
+
+    .btn-auth {
+      background: rgba(139, 92, 246, 0.15);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      color: #c4b5fd;
+      padding: 0.25rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-auth:hover {
+      background: rgba(139, 92, 246, 0.3);
+      color: white;
+    }
 
     .agent-desc {
       font-size: 0.8rem;
@@ -390,19 +472,31 @@
 
         // Renderizar Agentes
         const agentsContainer = document.getElementById('agentsList');
-        agentsContainer.innerHTML = status.agents.map(a => `
-          <div class="agent-card">
+        agentsContainer.innerHTML = status.agents.map(a => {
+          const isEnabled = a.status !== 'disabled';
+          return `
+          <div class="agent-card ${isEnabled ? '' : 'disabled'}">
             <div class="agent-header">
               <span class="agent-name">${a.name}</span>
               <span class="agent-status-tag status-${a.status}">${a.status}</span>
             </div>
-            <div class="agent-desc">${a.description}</div>
+            <div class="agent-desc">${a.description || 'Agente de IA especializado integrado ao CoAgent'}</div>
             <div class="agent-metrics">
-              <span>Tarefas Ativas: <span class="metric-value">${a.activeTasksCount}/${a.capabilities.maxConcurrency}</span></span>
+              <span>Carga: <span class="metric-value">${a.activeTasksCount}/${a.capabilities.maxConcurrency}</span></span>
               <span>Concluídas: <span class="metric-value" style="color:var(--success)">${a.totalTasksCompleted}</span></span>
             </div>
+            <div class="switch-wrap">
+              <span class="switch-label">${isEnabled ? '🟢 Ativo na Orquestração' : '⚪ Desativado (Ignorado)'}</span>
+              <div style="display:flex;align-items:center;gap:0.75rem;">
+                <label class="toggle-switch">
+                  <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleAgent('${a.id}')">
+                  <span class="slider"></span>
+                </label>
+              </div>
+            </div>
           </div>
-        `).join('');
+        `;
+        }).join('');
 
         // Renderizar Slots
         const slotsGrid = document.getElementById('slotsGrid');
@@ -438,6 +532,15 @@
         }
       } catch (err) {
         console.error('Erro ao atualizar dashboard:', err);
+      }
+    }
+
+    async function toggleAgent(agentId) {
+      try {
+        await fetch(`/api/agents/${agentId}/toggle`, { method: 'POST' });
+        await loadData();
+      } catch (err) {
+        console.error('Falha ao alternar estado do agente:', err);
       }
     }
 

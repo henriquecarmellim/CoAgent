@@ -56,6 +56,26 @@ export class AgentRegistry {
     return Array.from(this.agents.values());
   }
 
+  public isAgentEnabled(agentId: string): boolean {
+    const agent = this.getAgent(agentId);
+    return agent ? agent.status !== 'disabled' : false;
+  }
+
+  public toggleAgent(agentId: string, enabled?: boolean): boolean {
+    const agent = this.getAgentOrThrow(agentId);
+    const shouldEnable = enabled !== undefined ? enabled : agent.status === 'disabled';
+    const prevStatus = agent.status;
+    agent.status = shouldEnable ? 'idle' : 'disabled';
+
+    this.logger.info(`Agente ${agentId} ${shouldEnable ? 'ATIVADO' : 'DESATIVADO'} pelo usuário.`);
+    this.eventBus?.emitEvent(
+      'agent:status_changed',
+      { previousStatus: prevStatus, newStatus: agent.status },
+      { agentId }
+    );
+    return shouldEnable;
+  }
+
   public findAvailableAgentsForTask(taskType: TaskType): AgentMetadata[] {
     return this.listAgents().filter((agent) => {
       const isOnline = agent.status === 'idle' || agent.status === 'busy';

@@ -32,6 +32,25 @@ export async function startDashboardServer(
     return coagent.agentRegistry.listAgents();
   });
 
+  // REST: Ligar / Desligar Agente (Toggle On/Off)
+  fastify.post('/api/agents/:id/toggle', async (req) => {
+    const params = req.params as { id: string };
+    const body = (req.body ?? {}) as { enabled?: boolean };
+    const enabled = coagent.agentRegistry.toggleAgent(params.id, body.enabled);
+    return { success: true, agentId: params.id, enabled, status: enabled ? 'idle' : 'disabled' };
+  });
+
+  // REST: Configuração de Modelo do Agente
+  fastify.post('/api/agents/:id/config', async (req) => {
+    const params = req.params as { id: string };
+    const body = req.body as { defaultModel?: string; maxConcurrency?: number };
+    const agent = coagent.agentRegistry.getAgentOrThrow(params.id);
+    if (body.maxConcurrency !== undefined) {
+      agent.capabilities.maxConcurrency = body.maxConcurrency;
+    }
+    return { success: true, agent };
+  });
+
   // REST: Listagem de Tarefas
   fastify.get('/api/tasks', async (req) => {
     const query = req.query as { limit?: string; status?: string };
