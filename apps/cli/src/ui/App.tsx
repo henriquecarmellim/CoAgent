@@ -3,6 +3,7 @@ import { Box, Text, useInput, useApp } from 'ink';
 import Spinner from 'ink-spinner';
 import { exec } from 'node:child_process';
 import { CoAgentInstance } from '@coagent/orchestrator';
+import { startDashboardServer } from '@coagent/dashboard';
 import { Header } from './Header.js';
 import { Autocomplete } from './Autocomplete.js';
 import { SLASH_COMMANDS, CommandSuggestion } from './types.js';
@@ -37,6 +38,11 @@ export const App: React.FC<AppProps> = ({ coagent, dangerBypass, initialPrompt }
   const [selectedSuggestionIdx, setSelectedSuggestionIdx] = useState(0);
 
   const cwd = process.cwd();
+
+  // Inicia o servidor do dashboard em segundo plano silenciosamente
+  useEffect(() => {
+    startDashboardServer(3333, coagent).catch(() => {});
+  }, [coagent]);
 
   // Atualiza as sugestões de autocomplete conforme o usuário digita
   useEffect(() => {
@@ -118,8 +124,13 @@ export const App: React.FC<AppProps> = ({ coagent, dangerBypass, initialPrompt }
           type: 'system',
           content: '🌐 Abrindo CoAgent Web Dashboard em: http://localhost:3333\nUse o painel para ligar ou desligar qualquer agente com 1 clique!',
         });
+        startDashboardServer(3333, coagent).catch(() => {});
         if (process.platform === 'win32') {
-          exec('cmd /c start http://localhost:3333');
+          exec('start "" "http://localhost:3333"', (err) => {
+            if (err) {
+              exec('powershell -NoProfile -Command "Start-Process \'http://localhost:3333\'"');
+            }
+          });
         } else if (process.platform === 'darwin') {
           exec('open http://localhost:3333');
         } else {

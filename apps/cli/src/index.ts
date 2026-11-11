@@ -6,6 +6,7 @@ import chalk from 'chalk';
 import Table from 'cli-table3';
 import ora from 'ora';
 import { exec, execSync } from 'node:child_process';
+import { startDashboardServer } from '@coagent/dashboard';
 import { App } from './ui/App.js';
 
 if (!process.env['COAGENT_LOG_LEVEL'] && !process.env['DEBUG']) {
@@ -23,6 +24,9 @@ const program = new Command();
  * Inicia a sessão interativa TUI idêntica ao Claude Code com Ink/React.
  */
 async function startInteractiveSession(initialPrompt?: string) {
+  // Inicia o servidor do dashboard na porta 3333 em segundo plano silenciosamente
+  await startDashboardServer(3333, coagent).catch(() => {});
+
   const { waitUntilExit } = render(
     React.createElement(App, {
       coagent,
@@ -449,12 +453,13 @@ program
   .alias('dash')
   .description('Inicia e abre o dashboard web local no navegador')
   .option('-p, --port <port>', 'Porta do dashboard', '3333')
-  .action((options: { port?: string }) => {
+  .action(async (options: { port?: string }) => {
     const port = parseInt(options.port ?? '3333', 10);
     const url = `http://localhost:${port}`;
-    console.log(chalk.bold.cyan(`\n🌐 Abrindo CoAgent Web Dashboard em: ${chalk.underline(url)}\n`));
+    console.log(chalk.bold.cyan(`\n🌐 Iniciando e abrindo CoAgent Web Dashboard em: ${chalk.underline(url)}\n`));
+    await startDashboardServer(port, coagent).catch(() => {});
     if (process.platform === 'win32') {
-      exec(`cmd /c start ${url}`);
+      exec(`powershell -NoProfile -Command "Start-Process '${url}'"`);
     } else if (process.platform === 'darwin') {
       exec(`open ${url}`);
     } else {

@@ -219,8 +219,15 @@ export async function startDashboardServer(
     });
   });
 
-  await fastify.listen({ port, host: '0.0.0.0' });
-  console.log(`[Dashboard] CoAgent Web Dashboard ouvindo em http://localhost:${port}`);
+  try {
+    await fastify.listen({ port, host: '0.0.0.0' });
+  } catch (err: any) {
+    if (err.code === 'EADDRINUSE') {
+      // Porta já aberta, reutiliza instância existente
+      return;
+    }
+    throw err;
+  }
 }
 
 // Se executado diretamente

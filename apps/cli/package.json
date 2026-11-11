@@ -9,6 +9,7 @@
   "dependencies": {
     "@coagent/adapters": "*",
     "@coagent/core": "*",
+    "@coagent/dashboard": "*",
     "@coagent/orchestrator": "*",
     "@coagent/protocol": "*",
     "@coagent/scheduler": "*",

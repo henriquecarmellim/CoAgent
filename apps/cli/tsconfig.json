@@ -13,7 +13,8 @@
     { "path": "../../packages/core" },
     { "path": "../../packages/scheduler" },
     { "path": "../../packages/adapters" },
-    { "path": "../../packages/orchestrator" }
+    { "path": "../../packages/orchestrator" },
+    { "path": "../../apps/dashboard" }
   ],
   "include": ["src/**/*"]
 }
