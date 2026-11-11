@@ -37,7 +37,7 @@ export type TaskType = z.infer<typeof TaskTypeSchema>;
 export const VALID_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   pending: ['queued', 'running', 'cancelled', 'blocked'],
   queued: ['running', 'cancelled', 'blocked'],
-  running: ['waiting_approval', 'completed', 'failed', 'cancelled', 'blocked'],
+  running: ['queued', 'waiting_approval', 'completed', 'failed', 'cancelled', 'blocked'],
   waiting_approval: ['running', 'cancelled', 'failed'],
   blocked: ['queued', 'pending', 'cancelled', 'failed'],
   completed: [],

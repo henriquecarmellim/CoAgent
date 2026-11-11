@@ -62,11 +62,14 @@ export abstract class BaseCliAdapter implements AgentAdapter {
       let stdoutBuffer = '';
       let stderrBuffer = '';
 
-      // Configura spawn no Windows
+      // Configura spawn no Windows: executáveis nativos .exe rodam sem shell; scripts usam shell
       const isWindows = process.platform === 'win32';
+      const isScript = this.executablePath.endsWith('.ps1') || this.executablePath.endsWith('.cmd') || this.executablePath.endsWith('.bat');
+      const useShell = isWindows && isScript;
+
       const child = spawn(this.executablePath, args, {
         cwd,
-        shell: isWindows,
+        shell: useShell,
         env: {
           ...process.env,
           COAGENT_TASK_ID: options.task.id,
