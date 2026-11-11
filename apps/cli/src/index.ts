@@ -1,30 +1,12 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
-
-// Se o binário nativo em Rust existir, delega a execução com máxima performance
-const __filename = fileURLToPath(import.meta.url);
-const rootDir = resolve(dirname(__filename), '../../..');
-const rustExeRelease = resolve(rootDir, 'apps/cli-rust/target/release/coagent.exe');
-const rustExeDebug = resolve(rootDir, 'apps/cli-rust/target/debug/coagent.exe');
-const rustExe = existsSync(rustExeRelease) ? rustExeRelease : (existsSync(rustExeDebug) ? rustExeDebug : null);
-
-if (rustExe && !process.env['COAGENT_FORCE_NODE']) {
-  const res = spawnSync(rustExe, process.argv.slice(2), {
-    stdio: 'inherit',
-    env: { ...process.env, COAGENT_ROOT: rootDir },
-  });
-  process.exit(res.status ?? 0);
-}
-
+import React from 'react';
+import { render } from 'ink';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import ora from 'ora';
-import { createInterface } from 'node:readline';
-import { execSync } from 'node:child_process';
+import { exec, execSync } from 'node:child_process';
+import { App } from './ui/App.js';
 
 if (!process.env['COAGENT_LOG_LEVEL'] && !process.env['DEBUG']) {
   process.env['COAGENT_LOG_LEVEL'] = 'warn';
@@ -37,239 +19,23 @@ const isDangerBypass = process.argv.includes('--dangerously-skip-permissions');
 const coagent = bootstrapCoAgent({ dangerouslySkipPermissions: isDangerBypass });
 const program = new Command();
 
-const BANNER_ART = `
-${chalk.bold.cyan('  ██████╗ ██████╗  █████╗  ██████╗ ███████╗███╗   ██╗████████╗')}
-${chalk.bold.cyan(' ██╔════╝██╔═══██╗██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝')}
-${chalk.bold.blue(' ██║     ██║   ██║███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ')}
-${chalk.bold.blue(' ██║     ██║   ██║██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ')}
-${chalk.bold.magenta(' ╚██████╗╚██████╔╝██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ')}
-${chalk.bold.magenta('  ╚═════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ')}
-`;
-
 /**
- * Inicia a sessão interativa TUI (estilo Claude Code).
+ * Inicia a sessão interativa TUI idêntica ao Claude Code com Ink/React.
  */
 async function startInteractiveSession(initialPrompt?: string) {
-  console.clear();
-  console.log(BANNER_ART);
-  console.log(chalk.bold.white('  Orquestrador Multiagente Autônomo para Engenharia de Software'));
-  console.log(chalk.gray('  v1.0.0 • Windows 11 • Node.js ' + process.version + ' • SQLite WAL\n'));
-
-  // Status dos agentes conectados
-  const agents = coagent.agentRegistry.listAgents();
-  const agentTags = agents
-    .map((a) => {
-      const dot = a.status === 'idle' ? chalk.green('●') : chalk.yellow('●');
-      return `${dot} ${chalk.bold(a.name)}`;
+  const { waitUntilExit } = render(
+    React.createElement(App, {
+      coagent,
+      dangerBypass: isDangerBypass,
+      initialPrompt,
     })
-    .join('  ');
-
-  console.log(`  ${chalk.bold('Agentes Conectados:')} ${agentTags}`);
-  console.log(
-    `  ${chalk.bold('Concorrência:')} ${chalk.cyan('0/4 slots ativos')}  ${
-      isDangerBypass ? chalk.bold.red('⚠️  Dangerously Skip Permissions [ATIVO]') : chalk.green('🛡️  Segurança [Workspace-Write]')
-    }`
   );
-  console.log(
-    chalk.gray('  ─────────────────────────────────────────────────────────────────────────────')
-  );
-  console.log(
-    chalk.gray('  Comandos: /help, /agents, /status, /tasks, /advise, /review, /clear, /exit')
-  );
-  console.log(
-    chalk.gray('  Menções:  @advisor, @claude, @codex, @agy, @opencode ou digite seu objetivo.\n')
-  );
-
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: chalk.bold.cyan('coagent > '),
-  });
-
-  const handleInput = async (line: string) => {
-    const input = line.trim();
-    if (!input) {
-      rl.prompt();
-      return;
-    }
-
-    // Slash Commands estilo Claude Code
-    if (input.startsWith('/')) {
-      const [cmd, ...args] = input.slice(1).split(' ');
-      const argStr = args.join(' ');
-
-      switch (cmd?.toLowerCase()) {
-        case 'exit':
-        case 'quit':
-        case 'sair':
-          console.log(chalk.yellow('\nAté logo! Encerrando sessão do CoAgent.\n'));
-          rl.close();
-          process.exit(0);
-          break;
-
-        case 'clear':
-        case 'cls':
-          console.clear();
-          console.log(BANNER_ART);
-          break;
-
-        case 'help':
-        case 'ajuda':
-          console.log(chalk.bold('\n📖 Comandos do CoAgent Shell:'));
-          console.log('  /test [id]       - Roda validação Hello World no agente ou em todos');
-          console.log('  /agents          - Lista os agentes conectados e seus status');
-          console.log('  /status          - Exibe uso dos slots de concorrência e tarefas');
-          console.log('  /tasks           - Lista as tarefas recentes e seus estados');
-          console.log('  /advise <dúvida> - Consulta o CoAgent Advisor sênior');
-          console.log('  /review          - Roda o Ultrareview no git diff do repositório');
-          console.log('  /clear           - Limpa o terminal');
-          console.log('  /exit            - Encerra a sessão interativa\n');
-          break;
-
-        case 'test':
-          console.log(chalk.cyan(`\nIniciando validação básica (Hello World)...`));
-          const targetAgent = argStr || 'agy-1';
-          const tTask = coagent.taskManager.createTask({
-            title: `Teste Hello World (${targetAgent})`,
-            description: 'Responda exatamente apenas: "HELLO_COAGENT_OK"',
-            type: 'general',
-            priority: 'high',
-            assignedAgent: targetAgent,
-            securityPolicy: { dangerouslySkipPermissions: true },
-          });
-          coagent.scheduler.submitTask(tTask);
-          console.log(chalk.green(`✓ Tarefa de teste despachada para ${targetAgent} (ID: ${tTask.id})\n`));
-          break;
-
-        case 'agents':
-          const table = new Table({
-            head: [chalk.cyan('ID'), chalk.cyan('Nome'), chalk.cyan('Status'), chalk.cyan('Concorrência'), chalk.cyan('Sucesso')],
-          });
-          for (const a of coagent.agentRegistry.listAgents()) {
-            table.push([a.id, a.name, a.status === 'idle' ? chalk.green('idle') : chalk.yellow('busy'), `${a.activeTasksCount}/${a.capabilities.maxConcurrency}`, chalk.green(a.totalTasksCompleted)]);
-          }
-          console.log('\n' + table.toString() + '\n');
-          break;
-
-        case 'status':
-          const status = coagent.orchestrator.getSystemStatus();
-          console.log(`\n• Slots Ocupados: ${chalk.cyan(status.concurrency.active)} / ${chalk.cyan(status.concurrency.max)}`);
-          console.log(`• Tarefas em Execução: ${chalk.yellow(status.activeTasks.length)}`);
-          console.log(`• Fila de Espera: ${chalk.blue(status.queuedTasks.length)}\n`);
-          break;
-
-        case 'tasks':
-          const tasks = coagent.taskManager.listTasks(10);
-          if (tasks.length === 0) {
-            console.log(chalk.gray('\nNenhuma tarefa registrada.\n'));
-          } else {
-            const taskTable = new Table({
-              head: [chalk.cyan('ID'), chalk.cyan('Título'), chalk.cyan('Status'), chalk.cyan('Agente')],
-            });
-            for (const t of tasks) {
-              taskTable.push([t.id.slice(0, 16), t.title, t.status, t.assignedAgent ?? 'auto']);
-            }
-            console.log('\n' + taskTable.toString() + '\n');
-          }
-          break;
-
-        case 'advise':
-          if (!argStr) {
-            console.log(chalk.yellow('\nUso: /advise <sua pergunta ou dúvida técnica>\n'));
-          } else {
-            console.log(chalk.magenta('\n🧠 Consultando CoAgent Advisor...'));
-            const advice = await coagent.orchestrator.advisor.advise(argStr);
-            console.log('\n' + chalk.cyan(advice) + '\n');
-          }
-          break;
-
-        case 'review':
-          console.log(chalk.magenta('\n🧐 CoAgent Advisor analisando Git diff...'));
-          let diff = '';
-          try {
-            const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
-            diff = execSync('git diff HEAD', { encoding: 'utf-8', shell });
-            if (!diff.trim()) diff = execSync('git diff --cached', { encoding: 'utf-8', shell });
-          } catch {}
-          if (!diff.trim()) {
-            console.log(chalk.yellow('Nenhuma alteração no git diff para revisar.\n'));
-          } else {
-            const review = coagent.orchestrator.advisor.reviewDiff(diff);
-            console.log(review.approved ? chalk.green('✓ Aprovado pelo Advisor!') : chalk.red('✖ Reprovado pelo Advisor!'));
-            console.log(review.summary + '\n');
-          }
-          break;
-
-        default:
-          console.log(chalk.red(`Comando desconhecido: /${cmd}. Digite /help para ver a lista de comandos.\n`));
-      }
-
-      rl.prompt();
-      return;
-    }
-
-    // Processamento de Objetivo ou Menção
-    if (input.startsWith('@advisor')) {
-      const q = input.replace(/^@advisor\s*/, '');
-      console.log(chalk.magenta('\n🧠 Consultando CoAgent Advisor...'));
-      const advice = await coagent.orchestrator.advisor.advise(q);
-      console.log('\n' + chalk.cyan(advice) + '\n');
-      rl.prompt();
-      return;
-    }
-
-    // Orquestração Automática com os Agentes
-    console.log(chalk.cyan(`\n⚡ Decompondo objetivo e acionando agentes subordinados...`));
-    const spinner = ora('Coordenando execução paralela com Advisor e semáforo...').start();
-
-    try {
-      const result = await coagent.orchestrator.executeObjective(input, {
-        onAdvisorCritique: (critique) => {
-          spinner.info(chalk.magenta(`Advisor: ${critique.summary} (Score: ${critique.score}/100)`));
-          spinner.start('Executando subtarefas em paralelo...');
-        },
-        onProgress: (comp, tot) => {
-          spinner.text = `Progresso: ${comp}/${tot} subtarefas concluídas...`;
-        },
-      });
-
-      if (result.success) {
-        spinner.succeed(chalk.green('Objetivo concluído com sucesso!'));
-      } else {
-        spinner.warn(chalk.yellow('Objetivo concluído com falhas em algumas etapas.'));
-      }
-
-      console.log(chalk.bold(`\n📊 Relatório do CoAgent (${(result.durationMs / 1000).toFixed(2)}s):`));
-      console.log(`• Resumo: ${result.summary}`);
-
-      const resTable = new Table({
-        head: [chalk.cyan('Subtarefa'), chalk.cyan('Agente'), chalk.cyan('Status')],
-      });
-
-      for (const t of result.taskOutputs) {
-        resTable.push([t.title, t.agentId ?? 'auto', t.status === 'completed' ? chalk.green('✓ OK') : chalk.red('✖ Falha')]);
-      }
-      console.log(resTable.toString() + '\n');
-    } catch (err) {
-      spinner.fail(chalk.red('Falha na orquestração'));
-      console.error(err);
-      console.log('');
-    }
-
-    rl.prompt();
-  };
-
-  rl.on('line', handleInput);
-
-  if (initialPrompt) {
-    console.log(chalk.cyan(`Executando instrução inicial: "${initialPrompt}"\n`));
-    await handleInput(initialPrompt);
-  } else {
-    rl.prompt();
-  }
+  await waitUntilExit();
 }
 
+// ==========================================
 // Configuração principal da CLI
+// ==========================================
 program
   .name('coagent')
   .description(chalk.bold.cyan('CoAgent — Framework de Orquestração Multiagente de IA'))
@@ -296,7 +62,7 @@ program
       return;
     }
 
-    // Comportamento Padrão: entra direto na Sessão Interativa TUI
+    // Comportamento Padrão: entra direto na Sessão Interativa TUI idêntica ao Claude Code
     await startInteractiveSession(promptText);
   });
 
@@ -335,7 +101,6 @@ program
       try {
         coagent.scheduler.submitTask(testTask);
 
-        // Aguarda execução
         let completed = false;
         let attempts = 0;
         while (!completed && attempts < 100) {
@@ -368,6 +133,23 @@ program
     }
 
     console.log(chalk.bold.green('Validação concluída.\n'));
+  });
+
+// ==========================================
+// Subcomando: ADDAGENTS (Assistente de Login)
+// ==========================================
+program
+  .command('addagents')
+  .alias('auth')
+  .description('Assistente para autenticar e conectar contas Google, Claude Code, Codex e OpenCode')
+  .action(() => {
+    console.log(chalk.bold.cyan('\n🔑 Assistente de Contas & Login de Agentes:\n'));
+    console.log('Comandos oficiais para autenticação no terminal:');
+    console.log(`  • Google Antigravity: ${chalk.green.bold('agy auth')} ou ${chalk.green.bold('agy login')}`);
+    console.log(`  • Claude Code CLI:    ${chalk.green.bold('claude login')}`);
+    console.log(`  • OpenAI Codex CLI:   ${chalk.green.bold('codex login')}`);
+    console.log(`  • OpenCode CLI:       ${chalk.green.bold('opencode auth')}`);
+    console.log(`\n💡 Para ligar ou desligar qualquer agente com 1 clique, use: ${chalk.cyan.underline('coagent dashboard')}\n`);
   });
 
 // ==========================================
@@ -625,7 +407,6 @@ taskCmd
     console.log(`• Status: ${chalk.bold.yellow(task.status)}`);
     console.log(`• Prioridade: ${task.priority}`);
     console.log(`• Agente: ${task.assignedAgent ?? 'Não atribuído'}`);
-    console.log(`• Dependências: ${task.dependsOn.length > 0 ? task.dependsOn.join(', ') : 'Nenhuma'}`);
     console.log(`• Criada em: ${task.createdAt}`);
     console.log(`• Iniciada em: ${task.startedAt ?? 'N/A'}`);
     console.log(`• Concluída em: ${task.completedAt ?? 'N/A'}`);
@@ -642,34 +423,6 @@ taskCmd
     console.log('');
   });
 
-taskCmd
-  .command('approve <id>')
-  .description('Aprova a execução de uma tarefa pausada para autorização humana')
-  .action((id: string) => {
-    try {
-      coagent.taskManager.transitionStatus(id, 'running');
-      console.log(chalk.green(`\n✓ Tarefa ${id} APROVADA com sucesso. Execução retomada.\n`));
-    } catch (err) {
-      console.log(chalk.red(`\n✖ Erro ao aprovar tarefa: ${err instanceof Error ? err.message : String(err)}\n`));
-    }
-  });
-
-taskCmd
-  .command('reject <id>')
-  .description('Rejeita e cancela uma tarefa pausada para autorização humana')
-  .action((id: string) => {
-    coagent.scheduler.cancelRunningTask(id, 'Operação rejeitada pelo usuário');
-    console.log(chalk.yellow(`\n✓ Tarefa ${id} REJEITADA e cancelada pelo usuário.\n`));
-  });
-
-taskCmd
-  .command('cancel <id>')
-  .description('Cancela uma tarefa em execução ou na fila')
-  .action((id: string) => {
-    coagent.scheduler.cancelRunningTask(id, 'Cancelado via linha de comando');
-    console.log(chalk.yellow(`\n✓ Solicitação de cancelamento enviada para tarefa ${id}\n`));
-  });
-
 // ==========================================
 // Subcomando: CONFIG
 // ==========================================
@@ -678,6 +431,7 @@ program
   .description('Exibe configurações ativas do CoAgent')
   .action(() => {
     console.log(chalk.bold('\n⚙️  Configurações Ativas do CoAgent:\n'));
+    console.log(`• Engine de Interface: ${chalk.cyan('Ink / React (Experiência Idêntica ao Claude Code)')}`);
     console.log(`• Limite Global de Concorrência: ${chalk.cyan('4 agentes simultâneos')}`);
     console.log(`• Limite por Provedor: ${chalk.cyan('2 por provedor (agy, claude-code, codex, opencode)')}`);
     console.log(`• Dangerously Skip Permissions: ${isDangerBypass ? chalk.red('ATIVADO') : chalk.green('DESATIVADO')}`);
@@ -692,14 +446,20 @@ program
 // ==========================================
 program
   .command('dashboard')
-  .description('Inicia o dashboard web local em tempo real')
+  .alias('dash')
+  .description('Inicia e abre o dashboard web local no navegador')
   .option('-p, --port <port>', 'Porta do dashboard', '3333')
   .action((options: { port?: string }) => {
     const port = parseInt(options.port ?? '3333', 10);
-    console.log(chalk.bold.cyan(`\n🌐 Iniciando CoAgent Web Dashboard na porta ${port}...`));
-    console.log(`Acesse: ${chalk.underline.bold(`http://localhost:${port}`)}\n`);
-    console.log(`Para iniciar o serviço autônomo do dashboard em segundo plano, execute:`);
-    console.log(chalk.green(`  node apps/dashboard/dist/server.js\n`));
+    const url = `http://localhost:${port}`;
+    console.log(chalk.bold.cyan(`\n🌐 Abrindo CoAgent Web Dashboard em: ${chalk.underline(url)}\n`));
+    if (process.platform === 'win32') {
+      exec(`cmd /c start ${url}`);
+    } else if (process.platform === 'darwin') {
+      exec(`open ${url}`);
+    } else {
+      exec(`xdg-open ${url}`);
+    }
   });
 
 program.parse(process.argv);
